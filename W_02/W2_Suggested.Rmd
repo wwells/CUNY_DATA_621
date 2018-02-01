@@ -1,0 +1,122 @@
+---
+title: "CUNY DATA 621 - Business Analytics and Data Mining"
+subtitle: "Week 2 - Recommended"
+author: "Walt Wells, 2018"
+output:
+  html_document:
+    css: ../custom.css
+    highlight: zenburn
+    theme: lumen
+---
+
+# Environment Prep
+
+```{r, message=F, warning=F}
+if (!require('faraway')) install.packages('faraway')
+if (!require('ggplot2')) install.packages('ggplot2')
+```
+
+# MARR
+
+## 2.1
+
+```{r}
+playbill <- read.csv('http://www.stat.tamu.edu/~sheather/book/docs/datasets/playbill.csv')
+```
+
+```{r}
+mod <- lm(CurrentWeek ~ LastWeek, playbill)
+summary(mod)
+#plot(mod)
+confint(mod)
+```
+
+```{r}
+Bo <- 10000
+anova(mod)
+```
+
+```{r}
+predict(mod, data.frame(LastWeek=c(400000)), interval="confidence",level=0.95)
+```
+
+```{r}
+plot(playbill$LastWeek, playbill$CurrentWeek)
+abline(mod)
+```
+
+## 2.2
+
+```{r}
+indi <- read.table('http://www.stat.tamu.edu/~sheather/book/docs/datasets/indicators.txt', header = T)
+```
+
+```{r}
+mod2 <- lm(PriceChange ~ LoanPaymentsOverdue, indi)
+summary(mod2)
+plot(indi$LoanPaymentsOverdue, indi$PriceChange)
+abline(mod2)
+```
+
+```{r}
+confint(mod2)
+
+predict(mod2, data.frame(LoanPaymentsOverdue=c(4)), interval="confidence",level=0.95)
+```
+
+# LMR
+
+## 2.4
+
+```{r}
+data(prostate)
+m1 <- lm(lpsa ~ lcavol, prostate)
+m2 <- lm(lpsa ~ lcavol + lweight, prostate)
+m3 <- lm(lpsa ~ lcavol + lweight + svi, prostate)
+m4 <- lm(lpsa ~ lcavol + lweight + svi + lbph, prostate)
+m5 <- lm(lpsa ~ lcavol + lweight + svi + lbph + age, prostate)
+m6 <- lm(lpsa ~ lcavol + lweight + svi + lbph + age + lcp, prostate)
+m7 <- lm(lpsa ~ lcavol + lweight + svi + lbph + age + lcp + 
+             pgg45, prostate)
+m8 <- lm(lpsa ~ lcavol + lweight + svi + lbph + age + lcp + 
+             pgg45 + gleason, prostate)
+```
+
+```{r}
+df <- data.frame()
+
+l <- c()
+for (i in 1:8) {
+    l_new <- paste0("m", i)
+    l <- c(l, l_new)
+}
+for (mod in l) {
+    r2 <- summary(get(mod))$r.squared
+    rse <- summary(get(mod))$sigma
+    df <- rbind(df, c(R2 = r2, RSE = rse))
+}
+names(df) <- c("R2", "RSE")
+df$X <- seq(1, 8,1)
+```
+
+```{r}
+ggplot(df, aes(X)) + 
+    geom_line(aes(y=R2, colour="R2")) + 
+    geom_line(aes(y=RSE, colour="RSE")) + 
+    scale_colour_manual("", 
+                      breaks = c("R2", "RSE"),
+                      values = c("blue", "red")) + 
+    labs(title="R^2 v RSE as Features are Added to Model",
+         y="", x="Num Features")
+```
+
+## 2.5
+
+```{r}
+m1 <- lm(lpsa ~ lcavol, prostate)
+m2 <- lm(lcavol ~ lpsa, prostate)
+plot(prostate$lpsa, prostate$lcavol)
+abline(m1, lty=2)
+abline(m2, lty=1)
+```
+
