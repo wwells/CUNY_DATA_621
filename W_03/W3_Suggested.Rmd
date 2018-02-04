@@ -1,0 +1,144 @@
+---
+title: "CUNY DATA 621 - Business Analytics and Data Mining"
+subtitle: "Week 3 - Recommended"
+author: "Walt Wells, 2018"
+output:
+  html_document:
+    css: ../custom.css
+    highlight: zenburn
+    theme: lumen
+---
+
+# Environment Prep
+
+```{r, message=F, warning=F}
+if (!require('faraway')) install.packages('faraway')
+if (!require('ggplot2')) install.packages('ggplot2')
+```
+
+# MARR
+
+## 2.3
+
+```{r}
+data <- read.table('http://www.stat.tamu.edu/~sheather/book/docs/datasets/invoices.txt', header=T)
+
+mod <- lm(Time ~ Invoices, data)
+summary(mod)
+
+confint(mod,level=0.95)
+
+data2 <- data
+data2$Time <- .01
+H0 <- lm(Time ~ Invoices, data2)
+anova(H0, mod)
+
+predict(mod, data.frame(Invoices=c(131)), interval="prediction", level=0.95)
+```
+
+# LMR
+
+## 3.6
+
+```{r}
+data("teengamb")
+teengamb$sex <- as.factor(teengamb$sex)
+
+mod <- lm(gamble ~., teengamb)
+
+summary(mod)
+confint(mod)
+
+mod2 <- lm(gamble ~ income, teengamb)
+summary(mod2)
+
+mod3 <- lm(gamble ~ sex, teengamb)
+anova(null=mod, mod2, mod3)
+```
+
+## 4.5
+
+```{r}
+data(fat)
+lmod <- lm(brozek ~ ., fat)
+
+lmod2 <- lm(brozek ~ age + weight + height + abdom, fat)
+
+anova(lmod, lmod2)
+
+lmod_median <- apply(model.matrix(lmod), 2, median)
+p1 <- predict(lmod, data.frame(t(lmod_median)), 
+              interval = "prediction")
+lmod2_median <- apply(model.matrix(lmod2), 2, median)
+p2 <- predict(lmod2, data.frame(t(lmod2_median)), 
+              interval = "prediction")
+p1; p2
+
+lmod2$model[25:50,]
+plot(lmod2$model[25:50,])
+
+sub <- fat[-c(39,42) ,]
+lmod3 <- lm(brozek ~ age + weight + height + abdom, sub)
+plot(lmod3$model[24:50,])
+lmod3_median <- apply(model.matrix(lmod3), 2, median)
+p3 <- predict(lmod3, data.frame(t(lmod3_median)), 
+              interval = "prediction")
+p3
+```
+
+## 5.2
+
+```{r}
+data(odor)
+
+m1 <- lm(odor ~ temp, odor)
+m2 <- lm(odor ~ temp + gas, odor)
+m3 <- lm(odor ~ temp + pack, odor)
+m4 <- lm(odor ~ ., odor)
+
+modellist <- c("m1", "m2", "m3", "m4")
+name <- colnames(summary(m1)$coefficients)
+
+l <- c()
+for (mod in modellist) {
+    model <- get(mod)
+    c <- summary(model)$coefficients
+    temp <- c[rownames(c) == 'temp']
+    l <- c(l, temp)
+}
+df <- data.frame(t(matrix(unlist(l), nrow=4)))
+names(df) <- name
+rownames(df) <- modellist
+df
+```
+
+## 14.2
+
+```{r}
+data('infmort')
+require(ggplot2)
+summary(infmort)
+
+infmort <- infmort[complete.cases(infmort),]
+ggplot(aes(x=income, y=mortality), data=infmort) + 
+    geom_point(aes(color=oil)) + 
+    facet_wrap(~region)
+
+infmort$income <- log(infmort$income)
+infmort$mortality <- log(infmort$mortality)
+
+infmort <- infmort[complete.cases(infmort),]
+ggplot(aes(x=income, y=mortality), data=infmort) + 
+    geom_point(aes(color=oil)) + 
+    facet_wrap(~region)
+
+mod <- lm(mortality ~ income*region + income*oil, infmort)
+summary(mod)
+drop1(mod, test='F')
+anova(mod)
+
+mod2 <- lm(mortality ~ income + region + income*oil, infmort)
+summary(mod2)
+drop1(mod2, test='F')
+anova(mod2)
+```
