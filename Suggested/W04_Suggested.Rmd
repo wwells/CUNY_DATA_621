@@ -1,0 +1,151 @@
+---
+title: "CUNY DATA 621 - Business Analytics and Data Mining"
+subtitle: "Week 4 - Recommended"
+author: "Walt Wells, 2018"
+output:
+  html_document:
+    css: ../custom.css
+    highlight: zenburn
+    theme: lumen
+---
+
+# Environment Prep
+
+```{r, message=F, warning=F}
+if (!require(faraway)) install.packages(faraway)
+if (!require(splines)) install.packages(splines)
+if (!require(MASS)) (install.packages(MASS))
+if (!require(ggplot2)) install.packages(ggplot2)
+```
+
+# MARR
+
+## 3.3
+
+```{r}
+ad <- read.csv('http://www.stat.tamu.edu/~sheather/book/docs/datasets/AdRevenue.csv', header=T)
+```
+
+### A
+
+```{r, message=F}
+ggplot(ad, aes(Circulation, AdRevenue)) + geom_point() + 
+    geom_smooth()
+simp <- lm(AdRevenue ~ Circulation, ad)
+summary(simp)
+
+x <- data.frame(Circulation=c(0.5, 20))
+predict(simp, x, interval="prediction", level=0.95)
+```
+
+```{r}
+poly2 <- lm(AdRevenue ~ Circulation + I(Circulation^2), ad)
+summary(poly2)
+poly3 <- lm(AdRevenue ~ poly(Circulation, 3), ad)
+summary(poly3)
+
+plot(ad$Circulation, ad$AdRevenue)
+lines(predict(poly3, data.frame(Circulation = 0:33)))
+predict(poly3, x, interval="prediction", level=0.95)
+```
+
+## 3.8
+
+```{r}
+rings <- read.table('http://www.stat.tamu.edu/~sheather/book/docs/datasets/diamonds.txt', header=T)
+```
+
+### A
+
+```{r, message=FALSE}
+ggplot(rings, aes(Size, Price)) + geom_point() + stat_smooth()
+
+m1 <- lm(Price ~ Size, rings)
+summary(m1)
+```
+
+### B
+
+```{r}
+m2 <- lm(log(Price) ~ Size, rings)
+summary(m2)
+```
+
+# LMR
+
+## 6.1
+
+```{r}
+data(sat)
+
+m1 <- lm(total ~ expend + salary + ratio + takers, sat)
+
+#constant var check
+plot(fitted(m1), residuals(m1))
+abline(h=0)
+
+#normality check
+qqnorm(residuals(m1))
+qqline(residuals(m1))
+
+#large leverage points check
+halfnorm(hatvalues(m1))
+
+#outliers check
+#influential points check
+cook <- cooks.distance(m1)
+halfnorm(cook, 3)
+
+#relationship check
+plot(residuals(m1) ~ sat$total)
+abline(h=0)
+```
+
+## 9.1
+
+```{r, message=FALSE}
+data("aatemp")
+ggplot(aatemp, aes(year, temp)) + geom_point() + geom_smooth()
+
+m <- lm(temp ~ year + I(year^2) + I(year^3) + I(year^4)
+        + I(year^5) + I(year^6) + I(year^7)
+        + I(year^8) + I(year^9) + I(year^10), aatemp)
+
+stepAIC(m, direction='backward')
+```
+
+```{r}
+m2 <- lm(temp ~ year + I(year^2) + I(year^3) + 
+             I(year^4) + I(year^8), data = aatemp)
+pred <- predict(m2, data.frame(year=1850:2020))
+pred <- data.frame(cbind(p = pred, year=c(1850:2020)))
+ggplot(aatemp, aes(year, temp)) + geom_point() + 
+    geom_line(data=pred, aes(year, p), color="red")
+```
+
+```{r}
+ssf <- smooth.spline(aatemp$year, aatemp$temp, nknots=6)
+matplot(aatemp$year, cbind(aatemp$temp, ssf$y), type='pl',
+        lty=1, pch=20, col=1)
+```
+
+## 9.3
+
+```{r, message=F}
+data(pressure)
+pressure$logP <- log(pressure$pressure)
+
+ggplot(pressure, aes(temperature, logP)) + geom_point() + 
+    geom_smooth()
+
+m2 <- lm(logP ~ temperature + I(temperature^2)+ I(temperature^3), pressure)
+summary(m2)
+
+pred <- predict(m2, data.frame(temperature=pressure$temperature))
+pred <- data.frame(cbind(p = pred, temperature=pressure$temperature))
+
+
+ggplot(pressure, aes(temperature, logP)) + geom_point() + 
+    geom_line(data=pred, aes(temperature, p), color="red") + 
+    ggtitle("Predicted")
+```
