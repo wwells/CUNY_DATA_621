@@ -1,0 +1,110 @@
+---
+title: "CUNY DATA 621 - Business Analytics and Data Mining"
+subtitle: "Week 5 - Recommended"
+author: "Walt Wells, 2018"
+output:
+  html_document:
+    css: ../custom.css
+    highlight: zenburn
+    theme: lumen
+---
+
+# Environment Prep
+
+```{r, message=F, warning=F}
+if (!require(faraway)) install.packages(faraway)
+if (!require(MASS)) install.packages(MASS)
+if (!require(ggplot2)) install.packages(ggplot2)
+if (!require(Amelia)) install.packages(Amelia)
+if (!require(ggfortify)) install.packages(ggfortify)
+```
+
+# MARR
+
+## 5.1
+
+```{r, message=F}
+overdue <- read.table('http://www.stat.tamu.edu/~sheather/book/docs/datasets/overdue.txt', header=T)
+overdue$TYPE <- "Commercial"
+overdue$TYPE[1:48] <- "Residential"
+overdue$TYPE <- as.factor(overdue$TYPE)
+
+ggplot(overdue, aes(BILL, LATE)) + geom_point(aes(color=TYPE))
+
+mod <- lm(LATE ~ BILL + TYPE + TYPE:BILL, overdue)
+summary(mod)
+```
+
+## 5.2
+
+```{r}
+houston <- read.csv('http://www.stat.tamu.edu/~sheather/book/docs/datasets/HoustonChronicle.csv', header=T)
+
+houston$Year <- as.factor(houston$Year)
+
+ggplot(houston, aes(X.Low.income.students, X.Repeating.1st.Grade)) + geom_point(aes(color=Year))
+
+mod1 <- lm(X.Repeating.1st.Grade ~ X.Low.income.students, houston)
+mod2 <- lm(X.Repeating.1st.Grade ~ X.Low.income.students + 
+               Year + Year:X.Low.income.students, houston)
+summary(mod1)
+summary(mod2)
+anova(mod1, mod2)
+```
+
+# LMR
+
+## 13.1
+
+```{r, message=F, warning=F}
+data(kanga)
+kanga <- kanga[,3:20]
+
+round(colSums(is.na(kanga)) / nrow(kanga) * 100, 3)
+
+image(is.na(kanga), axes=FALSE)
+
+#kanga$palate.width <- NULL
+
+pr1 <- prcomp(~., data = kanga, center=T, scale=T)
+sd1 <- pr1$sdev
+autoplot(pr1, label=T, loadings=T)
+
+skullImp <- amelia(kanga, m=25)
+
+sds <- NULL
+for(i in 1:skullImp$m) {
+    pr <- prcomp(~., skullImp$imputations[[i]], center=T, scale=T)
+    sds <- cbind(sds, pr$sdev)
+}
+sds <- rowMeans(sds)
+
+results <- data.frame(n = names(kanga), 
+                      PCA_noImpute = sd1,
+                      PCA_MultipleImpute = sds)
+knitr::kable(results)
+```
+
+## 13.2
+
+```{r}
+load('galamiss.rda')
+data("gala")
+
+lm1 <- lm(Species ~ Area + Elevation + Nearest + Scruz + Adjacent, gala)
+lm2 <- lm(Species ~ Area + Elevation + Nearest + Scruz + Adjacent, galamiss)
+
+summary(lm1)
+summary(lm2)
+
+
+meangalamiss <- galamiss
+for(i in 1:ncol(meangalamiss)){
+  meangalamiss[is.na(meangalamiss[,i]), i] <- mean(meangalamiss[,i], na.rm = TRUE)
+}
+lm3 <- lm(Species ~ Area + Elevation + Nearest + Scruz + Adjacent, meangalamiss)
+
+
+
+summary(lm3)
+```
