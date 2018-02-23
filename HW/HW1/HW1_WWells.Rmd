@@ -357,5 +357,5 @@ grid.arrange(p1, p2, ncol=2)
 
 # Appendix
 
-* For full output code visit: LINK
-* For predicted values over test set visit:  LINK
+* For full output code visit: https://github.com/wwells/CUNY_DATA_621/blob/master/HW/HW1/HW1_Expl.Rmd
+* For predicted values over test set visit:  https://github.com/wwells/CUNY_DATA_621/blob/master/HW/HW1/testPredictions.csv
