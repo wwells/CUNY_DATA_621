@@ -1,0 +1,361 @@
+---
+title: "CUNY DATA 621 - Business Analytics and Data Mining"
+author: "Walt Wells, 2018"
+subtitle: "Homework 1 - Moneyball"
+output:
+  pdf_document: default
+  html_document:
+    df_print: paged
+---
+
+```{r, message=F, warning=F, echo=FALSE}
+if (!require('ggplot2')) (install.packages('ggplot2'))
+if (!require('MASS')) (install.packages('MASS'))
+if (!require('dplyr')) (install.packages('dplyr'))
+if (!require('gvlma')) (install.packages('gvlma'))
+if (!require('faraway')) (install.packages('faraway'))
+if (!require('mgcv')) (install.packages('mgcv'))
+if (!require('DataExplorer')) (install.packages('DataExplorer'))
+if (!require('corrplot')) (install.packages('corrplot'))
+if (!require('RColorBrewer')) (install.packages('RColorBrewer'))
+if (!require('gridExtra')) (install.packages('gridExtra'))
+
+theme_update(plot.title = element_text(hjust = 0.5), 
+             axis.text.x = element_text(angle = 90, hjust = 1))
+
+train <- read.csv('Data/moneyball-training-data.csv', header=T)
+train$INDEX <- NULL
+test <- read.csv('Data/moneyball-evaluation-data.csv', header=T)
+test$INDEX <- NULL
+
+cleanNames <- function(df) {
+    name_list <- names(df)
+    name_list <- gsub("TEAM_", "", name_list)
+    names(df) <- name_list
+    df
+}
+
+train <- cleanNames(train)
+test <- cleanNames(test)
+```
+
+## 1. DATA EXPLORATION (25 Points)
+
+Below we'll display a few basic EDA techniques to gain insight into our baseball dataset.
+
+### Basic Statistics
+
+The data is 144.6 Kb in size. There are 2,276 rows and 16 columns (features). Of all 16 columns, 0 are discrete, 16 are continuous, and 0 are all missing. There are 3,478 missing values out of 36,416 data points.
+
+### Histogram of Variables
+
+```{r, echo=FALSE, warning=FALSE}
+plot_histogram(train)
+```
+
+### Scatterplots of Each Variable Vs Target Wins
+
+```{r, echo=FALSE, warning=FALSE}
+# PREP EDA PLOTS
+trainplot <- reshape::melt(train, "TARGET_WINS")
+
+subByType <- function(var) {
+    df <- subset(trainplot, grepl(var, variable))
+    df$variable <- gsub(paste0(var, "_"), "", df$variable)
+    df
+}
+
+#split into batting, pitching, fielding, plot each
+batplot <- subByType("BATTING")
+baseplot <- subByType("BASERUN")
+pitchplot <- subByType("PITCHING")
+fieldplot <- subByType("FIELDING")
+```
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+ggplot(batplot, aes(value, TARGET_WINS)) +  geom_point() +
+    geom_smooth() + facet_grid(.~variable, scales='free') + 
+    labs(title="Batting Variables vs Wins", y="Wins", x='')
+ggplot(baseplot, aes(value, TARGET_WINS)) +  geom_point() +
+    geom_smooth() + facet_grid(.~variable, scales='free') + 
+    labs(title="BaseRun Variables vs Wins", y="Wins", x='')
+ggplot(pitchplot, aes(value, TARGET_WINS)) +  geom_point() +
+    geom_smooth() + facet_grid(.~variable, scales='free') + 
+    labs(title="Pitching Variables vs Wins", y="Wins", x='')
+ggplot(fieldplot, aes(value, TARGET_WINS)) +  geom_point() +
+    geom_smooth() + facet_grid(.~variable, scales='free') + 
+    labs(title="Fielding Variables vs Wins", y="Wins", x='')
+```
+
+
+## 2. DATA PREPARATION (25 Points)
+
+First, let's explore our missing values.
+
+### Missing Values
+
+```{r, message=FALSE, echo=FALSE, warning=FALSE}
+plot_missing(train)
+```
+
+As we can see from our chart, we have a number of missing values. We'll use Median imputation for CS, SB, and DP.   Since HBP has 92% missing values, we will remove that entirely.   Interestingly, Pitching and Batting SO are missing in the same observations, so once we have transformed our data with the above imputations, we will remove the 4% of cases that have that characteristic. 
+
+### Feature Creation
+
+We will also create two new variables: 
+
+* BATTING_1B = BATTING_H - BATTING_HR - BATTING_3B -BATTING_2B
+* BASERUN_StealPer = BASERUN_SB / (BASERUN_SB + BASERUN_CS))
+
+Once we have created our BATTING_1B, we will remove BATTING_H from the model.  
+                 
+
+```{r, echo=FALSE, warning=FALSE}
+m_CS <- round(median(train$BASERUN_CS, na.rm=T))
+m_SB <- round(median(train$BASERUN_SB, na.rm=T))
+m_DP <- round(median(train$FIELDING_DP, na.rm=T))
+
+Transform <- function(df, imputeMethod, scale=F) {
+    
+    ## NA Management
+    df[['BASERUN_CS']][is.na(df[['BASERUN_CS']])] <- m_CS
+    df[['BASERUN_SB']][is.na(df[['BASERUN_SB']])] <- m_SB
+    df[['FIELDING_DP']][is.na(df[['FIELDING_DP']])] <- m_DP
+
+    #Feature Creation
+    df <- df %>%
+        mutate(BATTING_1B = BATTING_H - BATTING_HR - BATTING_3B -
+                   BATTING_2B,
+               BASERUN_StealPer = BASERUN_SB / (BASERUN_SB + BASERUN_CS)) %>%
+        dplyr::select(-BATTING_H, -BATTING_HBP)
+    
+    
+    
+    return(df)
+}
+
+train2 <- Transform(train)
+test <- Transform(test)
+
+# Specialized cleaning
+
+train2 <- train2[complete.cases(train2), ] # remove NA SO for Pitching and Batting
+rownames(train2) <- NULL
+
+# handle train instances with NAs we did not remove from model
+test$BATTING_SO[is.na(test$BATTING_SO)] <- median(train2$BATTING_SO)
+test$PITCHING_SO[is.na(test$PITCHING_SO)] <- median(train2$PITCHING_SO)
+test$BASERUN_StealPer[is.na(test$BASERUN_StealPer)] <- median(train2$BASERUN_StealPer)
+```
+
+### Variable Correlation
+
+Here we explore the correlation of variables in our prepared dataset.
+
+```{r, message=FALSE, echo=FALSE, warning=FALSE}
+M <- cor(train2)
+corrplot(M, method="circle", type="upper", order="AOE", tl.cex = .4,
+         col = brewer.pal(n = 8, name = "RdYlBu"))
+```
+
+### Transformation
+
+Some initial exploration was done to transform our dependant and independant variables using log, sqrt, and box-cox, but no obvious gains were made.   It was therefore decided not attempt to apply transformation methods at this time.
+
+## 3. BUILD MODELS (25 Points)
+
+We built and compared a few different models.   These are outlined below.   For each, we checked assumptions necessary for regression.  
+
+#### RawData_Linear_Model_AllVar
+
+This model is essentially the raw training dataset and all the variables included.   As a result, the lm method in r removes all of the NAs that we prepared using the methods outlines in section 2.   We'll use this as our roughest baseline.  
+
+####  PrepData_Linear_Model_AllVar
+
+This model uses our prepared training dataset and creates a linear model that utilizes all the variables. 
+
+####  PrepData_Linear_Model_StepSelect
+
+This method uses the linear model above, but does backwards feature selection using the StepAIC method in R.   It ultimately retains 12 of the original 15 variables.  
+
+#### PrepData_Poly_Model_AllVar
+
+This method uses our prepared training dataset, and creates a polynomial fit to the 1-4 power for each of the 15 variables.  This creates 61 coefficients (intercept + 15 variables * 4 powers) to fit.  
+
+#### PrepData_Poly_Model_StepSelect
+
+Similar to what we did with the PrepData_Linear_Model_StepSelect, this model takes the PrepData_Poly_Model_AllVar and does backwards feature selection over it.   This method eliminates 17 of the 61 variables, giving us 44 features.  
+
+#### OutlierRM_Poly_Model_StepSelect
+
+This is a refined version of the PrepData_Poly_Model_StepSelect model.   We performed additional diagnostics on that model, found and removed leverage points and outliers, then refit the Polynomial model and performed backwards feature selection again.   After two iterations, this is the model we end up with. 
+
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+# Modeling
+
+## Raw data, all vars
+m1 <- lm(TARGET_WINS ~ ., train) 
+
+## Prepped data, all vars
+m2 <- lm(TARGET_WINS ~., train2)
+#summary(m2)
+#plot(m2)
+
+
+###Check 
+# linearity
+# independance
+# homoscedacity
+# normality of error distribution
+
+#gvmodel2 <- gvlma(m2)
+#summary(gvmodel2)
+
+
+#step_for <- stepAIC(m2, direction="forward")
+#summary_step_for <- summary(step_for)
+
+step_back <- stepAIC(m2, direction="backward", trace = F)
+m3.call <- summary(step_back)$call
+m3 <- lm(m3.call[2], train2)
+
+## 4th degree polynomial, all calls so can step through
+forma <- eval(paste("TARGET_WINS ~", 
+                    paste(paste(names(train2)[-1], sep=''), collapse = " + "),
+                    "+",
+                    paste(paste('I(', names(train2)[-1], '^2)', sep=''), 
+                          collapse=" + "),
+                    "+",
+                    paste(paste('I(', names(train2)[-1], '^3)', sep=''), 
+                          collapse=" + "),
+                    "+",
+                    paste(paste('I(', names(train2)[-1], '^4)', sep=''), 
+                          collapse=" + "))) 
+polymod <- lm(forma, train2)
+
+step_back_poly <- stepAIC(polymod, direction="backward", trace = F)
+poly.call <- summary(step_back_poly)$call
+polymod2 <- lm(poly.call[2], train2)
+
+```
+
+```{r, echo=FALSE, warning=FALSE}
+#plot(polymod2)
+```
+
+```{r, echo=FALSE, message=FALSE}
+rowRemove <- c(1506, 1278, 2033)  ## Remove Points beyond Cook's Distance lines
+train3 <- train2[-rowRemove, , drop=FALSE]
+rownames(train3) <- NULL
+
+rowRemove2 <- c(268, 1728, 405, 1914)  ## after second run and plot, Remove additioanl points
+train3 <- train3[-rowRemove2, , drop=FALSE]
+rownames(train3) <- NULL
+
+polymod.prep <- lm(forma, train3)
+
+step_back_poly <- stepAIC(polymod.prep, direction="backward", trace = F)
+poly.call <- summary(step_back_poly)$call
+polymod.outlier <- lm(poly.call[2], train3)
+```
+
+
+## 4. SELECT MODELS (25 Points)
+
+Below please find a table showing the R2, MSE, F-statistic, Number of Variables (K), Number of Observations (N), and number of observations in the original training set that were excluded from the model. 
+
+```{r, echo=FALSE, message=FALSE}
+results <- NULL
+l <- list(RawData_Linear_Model_AllVar = m1, 
+          PrepData_Linear_Model_AllVar = m2, 
+          PrepData_Linear_Model_StepSelect = m3,
+          PrepData_Poly_Model_AllVar = polymod,
+          PrepData_Poly_Model_StepSelect = polymod2,
+          OutlierRM_Poly_Model_StepSelect = polymod.outlier)
+for (i in names(l)) {
+    s <- summary(l[[i]])
+    name <- i
+    mse <- mean(s$residuals^2)
+    r2 <- s$r.squared
+    f <- s$fstatistic[1]
+    k <- s$fstatistic[2]
+    n <- s$fstatistic[3]
+    RemovedObservations <- nrow(train) - n
+    results <- rbind(results, data.frame(
+        name = name, rsquared = r2, mse = mse, f = f,
+        k = k, n = n, RemovedObservations = RemovedObservations
+    ))
+}
+
+rownames(results) <- NULL
+knitr::kable(results)
+```
+
+### Final Model Review
+
+First let's review all the expected diagnostics of our final model.
+
+Our final model is: 
+
+```{r, echo=FALSE, message=FALSE}
+print(poly.call[2])
+```
+
+Let's review the diagnostic plots and a plot of the residuals.  
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+plot(polymod.outlier)
+
+plot(sqrt(polymod.outlier$residuals))
+```
+
+Everything looks to be in scope here, since we removed individual observations that were skewing our diagnostics back in section 3.  
+
+### Plot the top Coefficients of our model
+
+What's interesting here and may point to a poor model is that essentially our intercept coefficient gives each observation 185.1 wins, and then most other coefficients subtract from there.   For visual ease, the coefficients below have been scaled.   
+
+```{r, echo=FALSE, message=FALSE}
+coef <- data.frame(sort(polymod.outlier$coefficients))
+coef$names <- rownames(coef)
+names(coef) <- c("coef","names")
+imp_coef <- rbind(head(coef,10),
+                  tail(coef,10))
+imp_coef$coef <- scale(imp_coef$coef)
+
+ggplot(imp_coef) +
+    geom_bar(aes(x=reorder(names,coef),y=coef),
+             stat="identity") +
+    coord_flip() +
+    ggtitle("Most Important 20 Coefficents \n in our Final Model (Scaled)") +
+    theme(axis.title=element_blank(), plot.title=element_text(hjust=0.5))
+```
+
+### Predictions
+
+We had to modify our predictions a bit because our final model a) predicted wins > 260 for one observation and b) -783 wins for another.   This is clearly poor performance and it may be important to find better options for our model.   
+
+For now, we simply modify these outlier observations so those maxs and mins are replaced with the maxes and mins of our final training set.  
+
+```{r, echo=FALSE, message=FALSE}
+m1_prediction <- predict(polymod.outlier, test)
+m1_prediction <- data.frame(m1_prediction)
+m1_prediction[m1_prediction$m1_prediction > max(train3$TARGET_WINS), ] <- max(train3$TARGET_WINS)
+m1_prediction[m1_prediction$m1_prediction < min(train3$TARGET_WINS), ] <- min(train3$TARGET_WINS)
+write.csv(m1_prediction, "testPredictions.csv")
+```
+
+### Compare predicted to original distribution
+
+```{r, echo=FALSE, message=FALSE}
+p1 <- ggplot(train3, aes(TARGET_WINS)) + geom_histogram() + ggtitle("Training Win Distribution") 
+p2 <- ggplot(m1_prediction, aes(m1_prediction)) + geom_histogram() + ggtitle("Predicted Win Distribution")
+
+grid.arrange(p1, p2, ncol=2)
+```
+
+# Appendix
+
+* For full output code visit: LINK
+* For predicted values over test set visit:  LINK
