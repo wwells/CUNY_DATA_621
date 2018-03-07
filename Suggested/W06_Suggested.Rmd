@@ -1,0 +1,118 @@
+---
+title: "CUNY DATA 621 - Business Analytics and Data Mining"
+subtitle: "Week 6 - Recommended"
+author: "Walt Wells, 2018"
+output:
+  html_document:
+    css: ../custom.css
+    highlight: zenburn
+    theme: lumen
+---
+
+# Environment Prep
+
+```{r, message=F, warning=F}
+if (!require(faraway)) install.packages(faraway)
+if (!require(MASS)) install.packages(MASS)
+if (!require(ggplot2)) install.packages(ggplot2)
+if (!require(DataExplorer)) install.packages(DataExplorer)
+if (!require(dplyr)) install.packages(dplyr)
+if (!require(stargazer)) install.packages(stargazer)
+```
+
+# MARR
+
+## 6.3
+
+## 6.5
+
+```{r}
+pga <- read.csv('http://www.stat.tamu.edu/~sheather/book/docs/datasets/pgatour2006.csv', header=T)
+
+pga <- pga %>%
+    select(PrizeMoney, DrivingAccuracy, GIR, PuttingAverage,
+           BirdieConversion, SandSaves, Scrambling, PuttsPerRound)
+
+plot_scatterplot(pga, "PrizeMoney")
+modbase <- lm(PrizeMoney ~., pga)
+```
+
+```{r}
+pgaLogY <- pga
+pgaLogY$logPrizeMoney <- log(pgaLogY$PrizeMoney)
+pgaLogY$PrizeMoney <- NULL
+plot_scatterplot(pgaLogY, "logPrizeMoney")
+
+mod1 <- lm(logPrizeMoney ~., pgaLogY)
+#plot(mod1)
+
+pgalogAll <- log(pga)
+plot_scatterplot(pgalogAll, "PrizeMoney")
+mod2 <- lm(PrizeMoney ~., pgalogAll)
+plot(mod2)
+```
+
+```{r results='asis'}
+stargazer(modbase, mod1, mod2, single.row = TRUE, type="html")
+```
+
+# LMR
+
+## 7.3
+
+```{r}
+data(divusa)
+divusa$year <- NULL
+mod1 <- lm(divorce ~., divusa)
+summary(mod1)
+
+round(cor(divusa), 4)
+x <- model.matrix(mod1)[,-1]
+e <- eigen(t(x) %*% x)
+e$val
+sqrt(e$val[1]/e$val)
+vif(x)
+
+mod2 <- lm(divorce ~ unemployed + femlab + marriage + birth, divusa)
+mod3 <- lm(divorce ~ femlab + marriage + birth, divusa)
+```
+
+```{r results='asis'}
+stargazer(mod1, mod2, mod3, single.row = TRUE, type="html")
+```
+
+## 7.8
+
+```{r}
+data(fat)
+mod1 <- lm(brozek ~., fat)
+
+corrplot::corrplot(cor(fat), type = "lower")
+x <- model.matrix(mod1)[,-1]
+e <- eigen(t(x) %*% x)
+e$val
+sqrt(e$val[1]/e$val)
+vif(x)
+```
+
+```{r}
+fat2 <- fat[-c(39, 42),]
+mod2 <- lm(brozek ~., fat2)
+mod3 <- lm(brozek ~ age + weight + height, fat)
+
+x <- model.matrix(mod3)[,-1]
+e <- eigen(t(x) %*% x)
+e$val
+sqrt(e$val[1]/e$val)
+vif(x)
+```
+
+```{r results='asis'}
+stargazer(mod1, mod2, mod3, single.row = TRUE, type="html")
+```
+
+```{r}
+predict(mod3, data.frame(age=median(fat$age), weight=median(fat$weight), height=median(fat$height)), interval="predict")
+predict(mod3, data.frame(age=40, weight=200, height=73), interval="predict")
+predict(mod3, data.frame(age=40, weight=130, height=73), interval="predict")
+```
