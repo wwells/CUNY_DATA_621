@@ -1,0 +1,160 @@
+---
+title: "CUNY DATA 621 - Business Analytics and Data Mining"
+subtitle: "Week 6 - Recommended"
+author: "Walt Wells, 2018"
+output:
+  html_document:
+    css: ../custom.css
+    highlight: zenburn
+    theme: lumen
+---
+
+# Environment Prep
+
+```{r, message=F, warning=F}
+if (!require(faraway)) install.packages(faraway)
+if (!require(MASS)) install.packages(MASS)
+if (!require(ggplot2)) install.packages(ggplot2)
+if (!require(leaps)) install.packages(leaps)
+if (!require(pls)) install.packages(pls)
+if (!require(stargazer)) install.packages(stargazer)
+```
+
+# MARR
+
+## 7.1
+## 7.2
+
+# LMR
+
+## 10.1
+
+### Backwards
+
+```{r, results='asis'}
+data(prostate)
+
+mod1 <- lm(lpsa ~ lcavol + lweight + age + lbph + svi + lcp + gleason + pgg45, prostate)
+mod2 <- lm(lpsa ~ lcavol + lweight + age + lbph + svi + lcp + pgg45, prostate)
+mod3 <- lm(lpsa ~ lcavol + lweight + age + lbph + svi + pgg45, prostate)
+mod4 <- lm(lpsa ~ lcavol + lweight + age + lbph + svi, prostate)
+mod5 <- lm(lpsa ~ lcavol + lweight + lbph + svi, prostate)
+mod6 <- lm(lpsa ~ lcavol + lweight + svi, prostate) 
+
+stargazer(mod1, mod2, mod3, mod4, mod5, mod6, single.row = TRUE, type="html")
+```
+
+### AIC
+
+```{r}
+#step(mod1)
+#estAIC <- lm(formula = lpsa ~ lcavol + lweight + age + lbph + svi, data = prostate)
+b <- regsubsets(lpsa ~., prostate)
+rs <- summary(b)
+rs$which
+
+AIC <- 50*log(rs$rss/50) + (2:9) * 2
+plot(AIC ~ I(1:8), ylab="AIC", xlab="Number of Predictors")
+
+AICmod <- lm(lpsa ~ lcavol + lweight + svi, prostate)
+```
+
+### Adjusted R^2
+
+```{r}
+plot(2:9, rs$adjr2, xlab="No. Parameters", ylab="Adjusted R-square")
+RSqMod <- lm(lpsa ~ lcavol + lweight + age + lbph + svi + lcp + pgg45, prostate)
+```
+
+### Mallows Cp
+
+```{r}
+plot(2:9, rs$cp, xlab="No. Parameters", ylab="Cp Statistic")
+CpMod <- lm(lpsa ~ lcavol + lweight + age + lbph + svi + lcp, prostate)
+```
+
+```{r, results = 'asis'}
+stargazer(mod1, AICmod, RSqMod, CpMod, single.row = TRUE, type="html")
+```
+
+## 10.6
+
+```{r}
+data("seatpos")
+mod1 <- lm(hipcenter ~., seatpos)
+summary(mod1)
+predict(mod1, data.frame(Age = mean(seatpos$Age), 
+                         Weight = mean(seatpos$Weight),
+                         HtShoes = mean(seatpos$HtShoes),
+                         Ht = mean(seatpos$Ht), 
+                         Seated = mean(seatpos$Seated),
+                         Arm = mean(seatpos$Arm),
+                         Thigh = mean(seatpos$Thigh),
+                         Leg = mean(seatpos$Leg)), 
+        interval = "prediction")
+
+b <- regsubsets(hipcenter ~., seatpos)
+rs <- summary(b)
+rs$which
+
+AIC <- 50*log(rs$rss/50) + (2:9) * 2
+plot(AIC ~ I(1:8), ylab="AIC", xlab="Number of Predictors")
+
+AICmod <- lm(hipcenter ~ Age + Ht + Leg, seatpos)
+```
+
+
+```{r, results = 'asis'}
+stargazer(mod1, AICmod, single.row = TRUE, type="html")
+```
+
+## 11.1
+
+```{r}
+prSeat <- prcomp(seatpos, scale=TRUE)
+summary(prSeat)
+round(prSeat$rotation[,1], 3)
+```
+
+```{r}
+#lmodpcr <- lm(seatpos$hipcenter ~ prSeat$x[,1:2])
+pcrmod <- pcr(hipcenter ~ HtShoes + Ht + Seated + Arm + Thigh + Leg, data = seatpos)
+
+summary(pcrmod)
+
+test <- data.frame(Age = 64.8,
+                   Weight = 263.7,
+                   HtShoes = 181.08,
+                   Ht = 178.56,
+                   Seated = 91.44,
+                   Arm = 35.64,
+                   Thigh = 40.95,
+                   Leg = 38.79)
+
+predict(pcrmod, test, ncomp=2)
+
+pcrmod2 <- pcr(hipcenter ~ HtShoes + Ht + Seated + Arm + Thigh + Leg + Age + Weight, data = seatpos)
+
+summary(pcrmod2)
+
+predict(pcrmod2, test, ncomp=3)
+```
+
+## 11.2
+
+```{r}
+plsmod <- plsr(hipcenter ~., data=seatpos, validtion = "CV")
+summary(plsmod)
+coefplot(plsmod, ncomp=4, xlab="Frequency")
+predict(plsmod, test, ncomp=4)
+```
+
+## 11.3
+
+```{r}
+seatposScale <- data.frame(scale(seatpos, scale=T))
+rgmod <- lm.ridge(hipcenter ~., data=seatposScale, lambda=seq(0, 100))
+matplot(rgmod$lambda, coef(rgmod), type="l", xlab=expression(lambda), ylab=expression(hat(beta)), col=1)
+
+ypred <- cbind(1, as.matrix(test)) %*% coef(rgmod)[8,]
+```
