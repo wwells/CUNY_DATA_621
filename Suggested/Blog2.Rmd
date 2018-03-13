@@ -1,0 +1,76 @@
+---
+title: "CUNY DATA 621 - Business Analytics and Data Mining"
+subtitle: "Blog 2 - Model Comparison Using Stargazer"
+author: "Walt Wells, 2018"
+output:
+  html_document:
+    css: ../custom.css
+    highlight: zenburn
+    theme: lumen
+---
+# Using Stargazer 
+
+The [stargazer package](https://cran.r-project.org/web/packages/stargazer/vignettes/stargazer.pdf) is a nice R package to compare model outputs and display some basic summary statistics.   Let's dive in and look at what it can do.
+
+For this experiment we'll use the pgatour2006 data from MARR 6.5 and log transform our Y.
+
+## Environment Prep
+
+```{r, message=F, warning=F}
+if (!require('dplyr')) install.packages('dplyr')
+if (!require('stargazer')) install.packages('stargazer')
+if (!require('psych')) (install.packages('psych'))
+
+pga <- read.csv('http://www.stat.tamu.edu/~sheather/book/docs/datasets/pgatour2006.csv', header=T)
+
+pga <- pga %>%
+    select(PrizeMoney, DrivingAccuracy, GIR, PuttingAverage,
+           BirdieConversion, SandSaves, Scrambling, PuttsPerRound)
+
+pgaLog <- pga
+pgaLog$logPrizeMoney <- log(pga$PrizeMoney)
+pgaLog$PrizeMoney <- NULL
+```
+
+## Basic Summary Statistics
+
+It's important to note that we need to add make sure the following is in our code chunks so it outputs correctly when knitting our markdown.
+
+`{r results='asis'}`
+
+```{r results='asis'}
+stargazer(pgaLog, type = "html", nobs = TRUE, mean.sd = TRUE, median = TRUE, iqr = TRUE)
+```
+
+### Using Describe from Psych library
+
+One downside to using stargazer for summary stats is that you can't get skew and kurtosis, which you can by using the describe function in the psych library. But it is a nice clean function call.  
+
+```{r}
+summary <- describe(pga[,c(1:8)])[,c(2:5,8,9,11,12)]
+knitr::kable(summary)
+```
+
+## Comparing Models
+
+Where the stargazer library really shines in the ability to compare different models using a single table.  
+
+```{r}
+mod1 <- lm(PrizeMoney ~., pga)
+mod2 <- lm(logPrizeMoney ~., pgaLog)
+mod3 <- lm(logPrizeMoney ~ GIR + BirdieConversion + SandSaves + Scrambling + PuttsPerRound, pgaLog)
+```
+
+What's really nice here is that we have 3 models, two of which utilize the log transformed Y and one which uses the original values for Y.   The stargazer package can plot them against each other quickly and easily, while still making clear the difference. 
+
+```{r, results="asis"}
+stargazer(mod1, mod2, mod3, type="html", column.labels = c("Good", "Better", "Best"))
+```
+
+### Customization
+
+There are lots of ways you can tweak and customize the table.   A great resource for learning more is: https://www.jakeruss.com/cheatsheets/stargazer/
+
+## Conclusion
+
+There's a lot to like about the stargazer package.   It is currently being actively managed, so there's potential for it to expand further as the community declares more of what it would like to see.   Personally, I appreciate tools like this that make it easier to display and visualize data and model outputs, so that when I can concentrate less on building code to display output in a useful way and more on the decision making and analysis. 

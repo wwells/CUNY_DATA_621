@@ -1,0 +1,70 @@
+---
+title: "CUNY DATA 621 - Business Analytics and Data Mining"
+subtitle: "Week 8 - Recommended"
+author: "Walt Wells, 2018"
+output:
+  html_document:
+    css: ../custom.css
+    highlight: zenburn
+    theme: lumen
+---
+
+# Environment Prep
+
+```{r, message=F, warning=F}
+if (!require(faraway)) install.packages(faraway)
+if (!require(MASS)) install.packages(MASS)
+if (!require(stargazer)) install.packages(stargazer)
+if (!require(MKmisc)) install.packages(MKmisc)
+```
+
+# MARR
+
+## 8.2
+
+```{r}
+data <- read.table('http://www.stat.tamu.edu/~sheather/book/docs/datasets/MissAmericato2008.txt', header=T)
+
+mod1 <- glm(Top10 ~ LogPopulation + LogContestants + LogTotalArea + Latitude + Longitude, data=data)
+mod2 <- glm(Top10 ~ LogPopulation + LogContestants + LogTotalArea + Latitude, data=data)
+mod3 <- glm(Top10 ~ LogPopulation + LogContestants + Latitude, data=data)
+```
+
+```{r, results="asis"}
+stargazer(mod1, mod2, mod3, single.row = TRUE, type="html")
+plot(mod3)
+```
+
+```{r}
+data2 <- data[-c(2),]
+
+mod1 <- glm(Top10 ~ LogPopulation + LogContestants + LogTotalArea + Latitude + Longitude, data=data2)
+mod2 <- glm(Top10 ~ LogPopulation + LogContestants + LogTotalArea + Latitude, data=data2)
+mod3 <- glm(Top10 ~ LogPopulation + LogContestants + Latitude, data=data2)
+```
+
+```{r, results="asis"}
+stargazer(mod1, mod2, mod3, single.row = TRUE, type="html")
+plot(mod3)
+```
+
+## 8.6
+
+```{r}
+data <- read.table('http://www.stat.tamu.edu/~sheather/book/docs/datasets/banknote.txt', header=T)
+
+mod1 <- glm(Y ~ Diagonal + Bottom, family = binomial(), data=data)
+
+ypred <- predict(mod1, data)
+
+HLgof.test(fit = ypred, obs = data$Y)
+```
+
+
+
+# ELMR
+
+## 2.2
+
+## 2.3
+
