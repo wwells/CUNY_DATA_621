@@ -13,9 +13,14 @@ output:
 
 ```{r, message=F, warning=F}
 if (!require(faraway)) install.packages(faraway)
+if (!require(ggplot2)) install.packages(ggplot2)
+if (!require(dplyr)) install.packages(dplyr)
+if (!require(pscl)) install.packages(pscl)
+if (!require(ROCR)) install.packages(ROCR)
 if (!require(MASS)) install.packages(MASS)
 if (!require(stargazer)) install.packages(stargazer)
 if (!require(MKmisc)) install.packages(MKmisc)
+if (!require(DataExplorer)) install.packages(DataExplorer)
 ```
 
 # MARR
@@ -60,11 +65,101 @@ ypred <- predict(mod1, data)
 HLgof.test(fit = ypred, obs = data$Y)
 ```
 
-
-
 # ELMR
 
 ## 2.2
 
+```{r, warning=FALSE}
+data(pima)
+pima$test <- as.factor(pima$test)
+pima$insulin[pima$insulin == 0] <- NA
+ggplot(pima, aes(x=insulin, color=test)) +
+    geom_histogram(position="dodge", aes(y=..density..))
+```
+
+```{r}
+pima$triceps[pima$triceps == 0] <- NA
+pima$glucose[pima$glucose == 0] <- NA
+pima$diastolic[pima$diastolic == 0] <- NA
+pima$bmi[pima$bmi == 0] <- NA
+
+mod1 <- glm(test ~., data=pima, family = binomial())
+summary(mod1)
+
+mod2 <- glm(test ~ pregnant + glucose + diastolic + bmi + diabetes + age, data=pima, family = binomial())
+summary(mod2)
+
+pima$NAtest <- rowSums(is.na(pima))
+pima$NAtest[pima$NAtest > 1] <- 1
+
+
+mod3 <- glm(test ~ pregnant + glucose + diastolic + bmi + diabetes + age + NAtest, data=pima, family = binomial())
+summary(mod3)
+
+anova(mod3)
+pR2(mod3)
+
+sub <- dplyr::select(pima, test, pregnant, glucose, diastolic, bmi, diabetes, age)
+actual <- sub$test[complete.cases(sub)]
+ypred <- fitted(mod3, pima)
+ypred <- ifelse(ypred > 0.5, 1, 0)
+
+## https://datascienceplus.com/perform-logistic-regression-in-r/
+misClasificError <- mean(ypred != actual)
+print(paste('Accuracy',1-misClasificError))
+
+pr <- prediction(ypred, actual)
+prf <- performance(pr, measure = "tpr", x.measure = "fpr")
+plot(prf)
+
+auc <- performance(pr, measure = "auc")
+auc <- auc@y.values[[1]]
+auc
+```
+
 ## 2.3
+
+```{r}
+data(kyphosis, package="rpart")
+plot_scatterplot(kyphosis, "Kyphosis", position=position_jitter())
+
+mod1 <- glm(Kyphosis ~., data=kyphosis, family=binomial())
+```
+
+```{r}
+kyphosis$Kyphosis <- as.numeric(kyphosis$Kyphosis)
+#linpred <- predict(mod1)
+#predprob <- predict(mod1, type="response")
+#rawres <- residuals(mod1, type="response")
+
+kOut <- mutate(kyphosis, residuals=residuals(mod1), linpred=predict(mod1))
+gdf <- group_by(kOut, cut(linpred, breaks=unique(quantile(linpred, (1:100)/101))))
+diagdf <- summarise(gdf, residuals=mean(residuals), linpred=mean(linpred))
+plot(residuals~linpred, diagdf, xlab="linear predictor")
+
+gdf <- group_by(kOut, Age)
+diagdf <- summarise(gdf, residuals=mean(residuals))
+ggplot(diagdf, aes(x=Age, y = residuals)) + geom_point(position=position_jitter())
+
+gdf <- group_by(kOut, Number)
+diagdf <- summarise(gdf, residuals=mean(residuals))
+ggplot(diagdf, aes(x=Number, y = residuals)) + geom_point(position=position_jitter())
+
+gdf <- group_by(kOut, Start)
+diagdf <- summarise(gdf, residuals=mean(residuals))
+ggplot(diagdf, aes(x=Start, y = residuals)) + geom_point(position=position_jitter())
+
+qqnorm(residuals(mod1))
+```
+
+```{r}
+kOutm <- mutate(kOut, predprob=predict(mod1, type="response"))
+gdf <- group_by(kOutm, cut(linpred, breaks=unique(quantile(linpred, (1:1000)/1000))))
+hldf <- summarise(gdf, y=sum(Kyphosis), ppred=mean(predprob), count=n())
+hldf <- mutate(hldf, se.fit=sqrt(ppred*(1-ppred)/count))
+
+ggplot(hldf, aes(x=ppred, y=y/count, ymin=y/count-2*se.fit, ymax=y/count+2*se.fit)) + geom_point() + 
+    geom_linerange(color=grey(0.75)) + geom_abline(intercept=0, slope=1)
+```
+
 
