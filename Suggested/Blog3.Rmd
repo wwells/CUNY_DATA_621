@@ -31,7 +31,6 @@ We'll also use the mean and sd from the training data to center and scale our tr
 ```{r, message=F, warning=F}
 if (!require('keras')) install.packages('keras')
 if (!require('DataExplorer')) install.packages('DataExplorer')
-if (!require('ggplot2')) install.packages('ggplot2')
 
 boston <- dataset_boston_housing()
 c(c(train_data, train_targets), c(test_data, test_targets)) %<-% boston
@@ -54,7 +53,7 @@ Here we initialize our architecture as a 3 layer network that takes our train_da
 
 The keras library leverages the magritte/dplyr hadleyverse pipe function to easily add elements to the network.   We see in the compile step, we choose our optimizer for backpropogation training, and choose our metrics for loss.  Since we're doing regression, we'll use MSE and MAE for training and adjudication respectively.
 
-Finally, in the last block we see the our training data actually being piped into our model and the model being fit.  We feed in our train_data, ask the network to minimize MAE based on the train_targets, and use our test data to validate.   Normally, we would want to have a separate validation dataset, but since there are so few observations here (506 in total), we'll just use our test to compare.   Since deep learning models can easily overfit the training data, it's important to compare to a validation set so we can see how badly we're overfitting.  Techiniques like regularization or dropout can help mitigate the effects of model overfitting.   Since this is a baby regression problem, we'll not add those layers to our network architecture.  
+Finally, in the last block we see the our training data actually being piped into our model and the model being fit.  We feed in our train_data, ask the network to minimize MSE based on the train_targets, and use our test data to validate.   Normally, we would want to have a separate validation dataset, but since there are so few observations here (506 in total), we'll just use our test to compare.   Since deep learning models can easily overfit the training data, it's important to compare to a validation set so we can see how badly we're overfitting.  Techiniques like regularization or dropout can help mitigate the effects of model overfitting.   Since this is a baby regression problem, we'll not add those layers to our network architecture. 
 
 We'll train for 10 epochs and a batch will be a single row/observation. 
 
@@ -68,7 +67,7 @@ model <- keras_model_sequential() %>%
 model %>% compile(
     optimizer = "rmsprop",
     loss = "mse", 
-    metrics = c("mae")
+    metrics = c("mse", "mae")
 )
 
 summary(model)
