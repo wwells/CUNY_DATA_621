@@ -1,0 +1,108 @@
+---
+title: "CUNY DATA 621 - Business Analytics and Data Mining"
+subtitle: "Blog 3 - Regression using Neural Nets and Keras in R"
+author: "Walt Wells, 2018"
+output:
+  html_document:
+    css: ../custom.css
+    highlight: zenburn
+    theme: lumen
+---
+# The Keras Package
+
+The [keras package](https://tensorflow.rstudio.com/keras/) is wonder library that leverages Keras to let a user build deep learning networks very easily in R.   The Keras package is designed to be a user-friendly interface and support backends like Tensorflow, Caffee, or Lasagne for doing deep learning with a variety of hardware including GPUS or TPUS.  
+
+It can be used seamlessly with the [CLoudML package](https://tensorflow.rstudio.com/tools/cloudml/articles/getting_started.html) to submit jobs directly to Google Compute Engine's CloudML API, making it even easier to train deep learning models without the fuss of managing the VMs/hardware.  
+
+## Regression using Deep Learning
+
+Deep learning excells at unlocking the secrets of datasets when confronted with large datasets for images, time-series, audio, video, etc.   However - it can also be used for regression!
+
+Below we'll build a very simple 3 layer neural network to make predictions over the popular Boston dataset being used in HW3.  
+
+The code here is inspired by chapter 4 in the excellent [Deep Learning with R](https://www.manning.com/books/deep-learning-with-r) book that was published in Jan 2018.  
+
+## Environment and Data Prep, Basic EDA
+
+Here we'll load our data (it comes with the Keras package already split into train and test) and use the data explorer package to plot our predictors against our targets. 
+
+We'll also use the mean and sd from the training data to center and scale our training and test datasets.
+
+```{r, message=F, warning=F}
+if (!require('keras')) install.packages('keras')
+if (!require('DataExplorer')) install.packages('DataExplorer')
+if (!require('ggplot2')) install.packages('ggplot2')
+
+boston <- dataset_boston_housing()
+c(c(train_data, train_targets), c(test_data, test_targets)) %<-% boston
+
+#normalize data
+mean <- apply(train_data, 2, mean)
+std <- apply (train_data, 2, sd)
+train_data <- scale(train_data, center=mean, scale=std)
+test_data <- scale(test_data, center=mean, scale=std)
+
+all_train <- data.frame(train_data, train_targets)
+plot_scatterplot(all_train, "train_targets")
+```
+
+## Initialize our Network
+
+While it will be out of scope for this blog to discuss some of the nuances of neural network architecture, you can get a sense of just how easy it is to build and train one using keras by seeing the code below.   
+
+Here we initialize our architecture as a 3 layer network that takes our train_data as in input shape, has 64 units in each of the first two filters and uses the very simply [ReLU](https://en.wikipedia.org/wiki/Rectifier_(neural_networks)) function for activating each of the two networks.   In the last layer, we output a single value, and that will be our linear regression predictor. 
+
+The keras library leverages the magritte/dplyr hadleyverse pipe function to easily add elements to the network.   We see in the compile step, we choose our optimizer for backpropogation training, and choose our metrics for loss.  Since we're doing regression, we'll use MSE and MAE for training and adjudication respectively.
+
+Finally, in the last block we see the our training data actually being piped into our model and the model being fit.  We feed in our train_data, ask the network to minimize MAE based on the train_targets, and use our test data to validate.   Normally, we would want to have a separate validation dataset, but since there are so few observations here (506 in total), we'll just use our test to compare.   Since deep learning models can easily overfit the training data, it's important to compare to a validation set so we can see how badly we're overfitting.  Techiniques like regularization or dropout can help mitigate the effects of model overfitting.   Since this is a baby regression problem, we'll not add those layers to our network architecture.  
+
+We'll train for 10 epochs and a batch will be a single row/observation. 
+
+```{r}
+model <- keras_model_sequential() %>%
+    layer_dense(units = 64, activation = "relu", 
+                input_shape = 13) %>%
+    layer_dense(units = 64, activation = "relu") %>%
+    layer_dense(units = 1)
+    
+model %>% compile(
+    optimizer = "rmsprop",
+    loss = "mse", 
+    metrics = c("mae")
+)
+
+summary(model)
+
+history <- model %>% fit(
+    train_data,
+    train_targets,
+    validation_data = list(test_data, test_targets),
+    epochs = 10, 
+    batch = 1, 
+    verbose = 1
+)
+```
+
+### Training Results
+
+We'll take a look at the training history we created above by piping our model fit into a variable called "history".   We can then easily plot this to see our given metrics over each epoch.   This can be particularly helpful to see where overfit starts.   
+
+```{r}
+history
+plot(history)
+```
+
+We'll evaluate our final model using the test dataset, and then make some predictions.   The final output below shows the first few rows of our predictions over the test data compared to the actual.
+
+```{r}
+evaluate(model, test_data, test_targets)
+
+preds <- predict(model, test_data)
+final <- data.frame(preds=preds, actual=test_targets)
+
+knitr::kable(head(final))
+```
+
+## Conclusion
+
+While using a neural network to do regression isn't necessary on smaller datasets like the Boston dataset, the above should serve as an example to start demystifying deep learning and provide context for the excellent new advances the Rstudio teams are rolling out.   
