@@ -10,13 +10,13 @@ output:
 ---
 # The Keras Package
 
-The [keras package](https://tensorflow.rstudio.com/keras/) is wonder library that leverages Keras to let a user build deep learning networks very easily in R.   The Keras package is designed to be a user-friendly interface and support backends like Tensorflow, Caffee, or Lasagne for doing deep learning with a variety of hardware including GPUS or TPUS.  
+The [Keras package](https://tensorflow.rstudio.com/keras/) is a wonderful library that leverages [Keras](https://keras.io/) to let a user build deep learning networks very easily in R.   The Keras package is designed to be a user-friendly interface and support backends like Tensorflow, Caffe, or Lasagne for doing deep learning with a variety of hardware including GPUS or TPUS.  
 
 It can be used seamlessly with the [CLoudML package](https://tensorflow.rstudio.com/tools/cloudml/articles/getting_started.html) to submit jobs directly to Google Compute Engine's CloudML API, making it even easier to train deep learning models without the fuss of managing the VMs/hardware.  
 
 ## Regression using Deep Learning
 
-Deep learning excells at unlocking the secrets of datasets when confronted with large datasets for images, time-series, audio, video, etc.   However - it can also be used for regression!
+Deep learning excels at unlocking the secrets of datasets when confronted with large datasets for images, time-series, audio, video, etc.   However - it can also be used for regression!
 
 Below we'll build a very simple 3 layer neural network to make predictions over the popular Boston dataset being used in HW3.  
 
@@ -24,7 +24,7 @@ The code here is inspired by chapter 4 in the excellent [Deep Learning with R](h
 
 ## Environment and Data Prep, Basic EDA
 
-Here we'll load our data (it comes with the Keras package already split into train and test) and use the data explorer package to plot our predictors against our targets. 
+Here we'll load our data (it comes with the Keras package already split into train and test) and use the DataExplorer package to plot our predictors against our targets. 
 
 We'll also use the mean and sd from the training data to center and scale our training and test datasets.
 
@@ -67,7 +67,7 @@ model <- keras_model_sequential() %>%
 model %>% compile(
     optimizer = "rmsprop",
     loss = "mse", 
-    metrics = c("mse", "mae")
+    metrics = c("mae")
 )
 
 summary(model)
