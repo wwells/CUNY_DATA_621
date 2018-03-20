@@ -1,0 +1,95 @@
+---
+title: "CUNY DATA 621 - Business Analytics and Data Mining"
+subtitle: "Week 9 - Recommended"
+author: "Walt Wells, 2018"
+output:
+  html_document:
+    css: ../custom.css
+    highlight: zenburn
+    theme: lumen
+---
+
+# Environment Prep
+
+```{r, message=F, warning=F}
+if (!require(faraway)) install.packages(faraway)
+if (!require(ggplot2)) install.packages(ggplot2)
+if (!require(dplyr)) install.packages(dplyr)
+if (!require(stargazer)) install.packages(stargazer)
+if (!require(mgcv)) install.packages(mgcv)
+```
+
+# ELMR
+
+## 3.2
+
+```{r}
+data("turtle")
+agg <- turtle %>% 
+    group_by(temp) %>%
+    mutate(all=male+female) %>%
+    summarise(male=sum(male), female=sum(female), all=sum(all)) %>%
+    mutate(propM=male/all, propF = female/all, temp = as.factor(temp))
+
+ggplot(agg, aes(x="", y=propM, fill=temp)) + geom_bar(width = 1, stat = "identity")
+
+mod1 <- glm(cbind(male, female) ~ temp, data=turtle, family=binomial)
+#summary(mod1)
+pchisq(deviance(mod1), df.residual(mod1), lower=FALSE)
+
+elogits <- with(turtle, log((male + 0.5)/(female + 0.5)))
+plot(turtle$temp, elogits, ylab="Empirical Logits", xlab="Temperature")
+
+mod2 <- glm(cbind(male, female) ~ I(temp^2) + temp, data=turtle, family=binomial)
+#summary(mod2)
+pchisq(deviance(mod2), df.residual(mod2), lower=FALSE)
+
+mod3 <- glm(cbind(male, female) ~ temp, data=agg, family=binomial)
+```
+
+```{r, results="asis"}
+stargazer(mod1, mod2, mod3, type="html")
+```
+
+## 3.4
+
+```{r}
+data("pyrimidines")
+
+par(mfrow=c(1,3))
+plot(pyrimidines$p1.polar, pyrimidines$activity)
+plot(pyrimidines$p1.size, pyrimidines$activity)
+plot(pyrimidines$p1.flex, pyrimidines$activity)
+
+pyrimidines <- pyrimidines[pyrimidines$activity > 0.2, ]
+```
+
+```{r}
+mod1 <- glm(activity ~ ., data=pyrimidines, family=gaussian())
+plot(mod1$residuals, mod1$fitted.values)
+print(paste0("Mod 1 Psudo R^2: ", 1 - (mod1$deviance/mod1$null.deviance)))
+
+mod2 <- glm(activity ~., data=pyrimidines, family=quasibinomial())
+print(paste0("Mod 2 Psudo R^2: ", 1 - (mod2$deviance/mod2$null.deviance)))
+
+mod3 <- glm(logit(activity) ~., data=pyrimidines, family=gaussian())
+print(paste0("Mod 3 Psudo R^2: ", 1 - (mod3$deviance/mod3$null.deviance)))
+
+mod3 <- glm(logit(activity) ~., data=pyrimidines, family=gaussian())
+print(paste0("Mod 3 Psudo R^2: ", 1 - (mod3$deviance/mod3$null.deviance)))
+
+mod4 <- gam(activity ~ p1.flex + p1.polar + p1.h.doner + p1.polarisable + 
+                p2.size + p2.flex + p3.size, 
+            family=betar(), data=pyrimidines)
+
+print(paste0("Mod 4 Psudo R^2: ", 1 - (mod4$deviance/mod4$null.deviance)))
+```
+
+
+```{r, results="asis"}
+stargazer(mod1, mod2, mod3, mod4, type="html")
+```
+
+
+
+
