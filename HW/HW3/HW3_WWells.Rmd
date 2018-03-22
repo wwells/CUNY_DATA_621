@@ -1,0 +1,273 @@
+---
+title: "CUNY DATA 621 - Business Analytics and Data Mining"
+author: "Walt Wells, 2018"
+subtitle: "Homework 3 - Logistic Regression"
+output:
+  pdf_document: default
+  html_document:
+    df_print: paged
+---
+
+```{r, message=F, warning=F, echo=FALSE}
+if (!require('ggplot2')) (install.packages('ggplot2'))
+if (!require('MASS')) (install.packages('MASS'))
+if (!require('dplyr')) (install.packages('dplyr'))
+if (!require('faraway')) (install.packages('faraway'))
+if (!require('DataExplorer')) (install.packages('DataExplorer'))
+if (!require('psych')) (install.packages('psych'))
+if (!require('caret')) (install.packages('caret'))
+if (!require('stargazer')) (install.packages('stargazer'))
+if (!require('pROC')) (install.packages('pROC'))
+
+theme_update(plot.title = element_text(hjust = 0.5), 
+             axis.text.x = element_text(angle = 90, hjust = 1))
+
+train <- read.csv('Data/crime-training-data_modified.csv', header=T)
+test <- read.csv('Data/crime-evaluation-data_modified.csv', header=T)
+
+trainchas <- as.factor(train$chas)
+train$chas <- NULL
+traintarget <- as.factor(train$target)
+train$target <- traintarget
+testchas <- as.factor(test$chas)
+test$chas <- NULL
+```
+
+## 1. DATA EXPLORATION
+
+Below we'll display a few basic EDA techniques to gain insight into our crime dataset.
+
+### Basic Statistics
+
+There are 466 rows and 14 columns (features). Of all 14 columns, 2 are discrete, 12 are continuous, and 0 are all missing. There are 0 missing values out of 6,524 data points.
+
+```{r, echo=FALSE, warning=FALSE}
+summary <- describe(train[,c(1:11)])[,c(2:5,8,9,11,12)]
+knitr::kable(summary)
+```
+
+### Compare Target in Training
+
+We make sure there are no issues with an inappropriate distribution of the target variable in our training data.
+
+```{r, echo=FALSE, warning=FALSE}
+knitr::kable(table(train$target))
+```
+
+### Histogram of Variables
+
+```{r, echo=FALSE, warning=FALSE}
+plot_histogram(train)
+
+relationships <- train
+relationships$chas <- NULL
+plot_scatterplot(relationships, "target", position = "jitter")
+```
+
+## 2. DATA PREPARATION
+
+There are no missing variables, which is nice.   We can see from our visualizations a few variables with some issues.   We'll modify `rad` so that the value for 24 is now sequential and 9.  We'll also center and scale our data based on the mean and standard deviation of each variable during the model building step. We'll otherwise avoid binning. 
+
+```{r, echo=FALSE, warning=FALSE}
+train$rad[train$rad == 24] <- 9
+```
+
+## 3. BUILD MODELS
+
+Because we have a small number of observations to train over, we'll use k-fold Cross Validation to train, with k = 10.   We'll hold out 15% of the data for validation while doing initial modeling, but once we select our model, we'll retrain over the full training set.
+
+Each of our logistic regression models will use bionomial regression with a logit link function. 
+
+### Model 1
+
+The first model fits includes all the variables.   A review of the VIF output of the model suggests some points that are highly colinear and a number of variables that may not be necessary.   Model 1 uses the formula:
+
+__target ~ .__
+
+```{r, echo=FALSE, warning=FALSE}
+set.seed(121)
+split <- createDataPartition(train$target, p=0.85, list=FALSE)
+partial_train <- train[split, ]
+validation <- train[ -split, ]
+
+mod1 <- train(target ~., data = partial_train, 
+              method = "glm", family = "binomial",
+              trControl = trainControl(
+                  method = "cv", number = 10,
+                  savePredictions = TRUE),
+              tuneLength = 5, 
+              preProcess = c("center", "scale"))
+
+knitr::kable(vif(mod1$finalModel))
+```
+
+### Model 2
+
+Our second model ignores the colinear issues, but removes models that seemed unnecessary in Model #1.   Model 2 uses the formula: 
+
+__target ~ zn + nox + age + dis + rad + ptratio + medv__
+
+```{r, echo=FALSE, warning=FALSE}
+# remove low p-values
+mod2 <- train(target ~ zn + nox + age + dis + rad + ptratio + medv, 
+            data = partial_train, 
+            method = "glm", family = "binomial",
+            trControl = trainControl(
+                  method = "cv", number = 10,
+                  savePredictions = TRUE),
+            tuneLength = 5, 
+            preProcess = c("center", "scale"))
+knitr::kable(vif(mod2$finalModel))
+```
+
+### Model #3
+
+Model #3 removes the variables with the 2 highest VIF values from model1.   The model formula is:
+
+__target ~ indus + rm + age + dis + tax + ptratio + lstat + medv__
+
+```{r, echo=FALSE, warning=FALSE}
+## Reduce Collinearity by removing high VIFs
+mod3 <- train(target ~ indus + rm + age + dis + tax + ptratio + lstat + medv, data = partial_train, 
+              method = "glm", family = "binomial",
+              trControl = trainControl(
+                  method = "cv", number = 10,
+                  savePredictions = TRUE),
+              tuneLength = 5, 
+              preProcess = c("center", "scale"))
+knitr::kable(vif(mod3$finalModel))
+```
+
+### Model #4
+
+Model #4 takes the advances in model #3 and removes those values shown to be poor predictors.   
+
+__target ~ age + dis + tax + medv__
+
+```{r, echo=FALSE, warning=FALSE}
+## reduce collinearity, and remove low values
+mod4 <- train(target ~ age + dis + tax + medv, 
+            data = partial_train, 
+            method = "glm", family = "binomial",
+            trControl = trainControl(
+                  method = "cv", number = 10,
+                  savePredictions = TRUE),
+            tuneLength = 5, 
+            preProcess = c("center", "scale"))
+knitr::kable(vif(mod4$finalModel))
+```
+
+## 4. SELECT MODELS
+
+To help aid in model selection, we'll review their accuracy by making predictions on our holdout validation set, and comparing their performance using a variety of confusion matrix adjacent functions like fourfold plots, summary statistics, and ROC / AUC plots. 
+
+### Fourfold Plots
+
+```{r, echo=FALSE, warning=FALSE}
+preds1 <- predict(mod1, newdata = validation)
+preds2 <- predict(mod2, newdata = validation)
+preds3 <- predict(mod3, newdata = validation)
+preds4 <- predict(mod4, newdata = validation)
+m1cM <- confusionMatrix(preds1, validation$target, 
+                        mode = "everything")
+m2cM <- confusionMatrix(preds2, validation$target, 
+                        mode = "everything")
+m3cM <- confusionMatrix(preds3, validation$target, 
+                        mode = "everything")
+m4cM <- confusionMatrix(preds4, validation$target, 
+                        mode = "everything")
+par(mfrow=c(2,2))
+fourfoldplot(m1cM$table, color = c("#B22222", "#2E8B57"), main="Mod1")
+fourfoldplot(m2cM$table, color = c("#B22222", "#2E8B57"), main="Mod2")
+fourfoldplot(m3cM$table, color = c("#B22222", "#2E8B57"), main="Mod3")
+fourfoldplot(m4cM$table, color = c("#B22222", "#2E8B57"), main="Mod4")
+```
+
+### Summary Statistics
+
+```{r, echo=FALSE, warning=FALSE}
+eval <- data.frame(m1cM$byClass, 
+                   m2cM$byClass, 
+                   m3cM$byClass, 
+                   m4cM$byClass)
+
+eval <- data.frame(t(eval))
+
+# manipulate results DF
+eval <- dplyr::select(eval, Sensitivity, Specificity, Precision, Recall, F1)
+row.names(eval) <- c("Model1", "Model2", "Model3", "Model4")
+knitr::kable(eval)
+```
+
+### ROC / AUC
+
+```{r, echo=FALSE, warning=FALSE}
+getROC <- function(model) {
+    name <- deparse(substitute(model))
+    pred.prob1 <- predict(model, newdata = train, type="prob")
+    p1 <- data.frame(pred = train$target, prob = pred.prob1[[1]])
+    p1 <- p1[order(p1$prob),]
+    rocobj <- roc(p1$pred, p1$prob)
+    plot(rocobj, asp=NA, legacy.axes = TRUE, print.auc=TRUE,
+         xlab="Specificity", main = name)
+}
+
+par(mfrow=c(2,2))
+getROC(mod1)
+getROC(mod2)
+getROC(mod3)
+getROC(mod4)
+```
+
+### Model Selection
+
+While the first 2 models may have the most information, they also suffer from so co-linearity issues as shown by the variance VIF output.   Model #3 performs well, but has some additional variables that may be poor predictors of whether a neighborhood will be above or below the median crime rate.   Instead, while stripped out, we'll use Model #4 with only age, dis, tax and medv as predictors.   
+
+Before we make predictions, let's run this final model over our full dataset, and review some summary diagnostic plots and output.  
+
+```{r, echo=FALSE, warning=FALSE}
+finalmod <- train(target ~ age + dis + tax + medv, 
+            data = train, 
+            method = "glm", family = "binomial",
+            trControl = trainControl(
+                  method = "cv", number = 10,
+                  savePredictions = TRUE),
+            tuneLength = 5, 
+            preProcess = c("center", "scale"))
+
+summary(finalmod)
+plot(finalmod$finalModel)
+```
+
+### Odds Ratio  
+
+We'll also create a table of the Odds Ratio for our final model beside the 95% confidence interval of those boundaries.  
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+odds <- round(exp(cbind(OddsRatio = coef(finalmod$finalModel), confint(finalmod$finalModel))), 3)
+knitr::kable(odds)
+```
+
+So we can now say that with a one unit increase in the scaled age variable, the odds of the neighborhood being below the median crime rate increase by 2.988%.  
+
+All that is left is to use our final to make predictions over the test dataset.  
+
+## Make Predictions
+
+We make our final predictions, create a dataframe with the prediction and the predicted probabilities.   We can see from the head of our final dataframe and the table output of our predicted variable class that the prediction distribution seems similar to our initial test distribution.  
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+finalpreds <- predict(finalmod, test)
+finalpreds.probs <- predict(finalmod, test, type="prob")
+finaldf <- cbind(finalpreds.probs, prediction=finalpreds)
+write.csv(finaldf, 'HW3preds.csv', row.names = FALSE)
+
+knitr::kable(head(finaldf))
+
+knitr::kable(table(finaldf$prediction))
+```
+
+# Appendix
+
+* For full output code visit: https://github.com/wwells/CUNY_DATA_621/blob/master/HW/HW3/HW3_WWells.Rmd
+* For predicted values over test set visit:  https://github.com/wwells/CUNY_DATA_621/blob/master/HW/HW3/HW3preds.csv
