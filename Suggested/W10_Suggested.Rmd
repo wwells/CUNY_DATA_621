@@ -1,0 +1,77 @@
+---
+title: "CUNY DATA 621 - Business Analytics and Data Mining"
+subtitle: "Week 9 - Recommended"
+author: "Walt Wells, 2018"
+output:
+  html_document:
+    css: ../custom.css
+    highlight: zenburn
+    theme: lumen
+---
+
+# Environment Prep
+
+```{r, message=F, warning=F}
+if (!require(faraway)) install.packages(faraway)
+if (!require(ggplot2)) install.packages(ggplot2)
+if (!require(dplyr)) install.packages(dplyr)
+if (!require(DataExplorer)) install.packages("DataExplorer")
+
+```
+
+# MARR 4.3
+
+```{r}
+houston <- read.table('http://www.stat.tamu.edu/~sheather/book/docs/datasets/HoustonRealEstate.txt', header=T)
+
+plot_scatterplot(houston, by="Yi")
+
+mod1 <- lm(Yi ~ x1i + x2i, data=houston, weights=ni)
+
+summary(mod1)
+plot(mod1)
+```
+
+# LMR 8.1
+
+```{r}
+data("pipeline")
+
+mod1 <- lm(Lab ~ Field, data=pipeline)
+plot(mod1)
+
+i <- order(pipeline$Field)
+npipe <- pipeline[i,]
+ff <- gl(12,9)[-108]
+meanfield <- unlist(lapply(split(npipe$Field, ff), mean))
+varlab <- unlist(lapply(split(npipe$Lab, ff), var))
+
+modEst <- lm(log(varlab) ~ log(meanfield))$coef
+mod2 <- lm(Lab ~ Field, data=pipeline, weights=modEst[2]*pipeline$Field - modEst[1]*pipeline$Lab)
+summary(mod2)
+plot(mod2)
+```
+
+# LMR 8.9
+
+```{r}
+data(fat)
+
+mod1 <- lm(brozek ~., data=fat)
+summary(mod1)
+
+library(MASS)
+mod2 <- rlm(brozek ~., data=fat)
+summary(mod2)
+
+wts <- mod2$w
+names(wts) <- rownames(fat)
+wts <- head(sort(wts), 10)
+
+print(paste0("Outliers: ", names(wts[c(1:2)])))
+print(paste0("Outlier Weights: ", fat$weight[169], " and ", fat$weight[182]))
+
+plot(fat$weight, fat$height)
+```
+
+
