@@ -1,0 +1,74 @@
+---
+title: "CUNY DATA 621 - Business Analytics and Data Mining"
+author: "Walt Wells, 2018"
+subtitle: Blog 4 - Using LIME in Regression
+output:
+  html_document:
+    css: ../custom.css
+    highlight: zenburn
+    theme: lumen
+  pdf_document: default
+---
+# The Lime Package
+
+The [LIME package](https://github.com/thomasp85/lime) or `Local Interpretable Model-agnostic Explanation` is a port of a python package developed to help illuminate the decision making behind black box models.  
+
+It can be used with by incorporating a model and a new observation, create an 'explainer object', and then detail why the model made a given prediction.   This can be useful for diagnostics and business purposes alike.    
+
+```{r, warning=FALSE, message=FALSE}
+if (!require('caret')) install.packages('caret')
+if (!require('lime')) install.packages('lime')
+```
+
+## Demo
+
+To demonstrate the package, we'll use the crime data from HW 3 and a sample model.   Some simple transformations are done to the data to prepare for the modeling step. 
+
+```{r}
+set.seed(121)
+train <- read.csv('https://raw.githubusercontent.com/wwells/CUNY_DATA_621/master/HW/HW3/Data/crime-training-data_modified.csv')
+test <- read.csv('https://raw.githubusercontent.com/wwells/CUNY_DATA_621/master/HW/HW3/Data/crime-evaluation-data_modified.csv')
+
+trainchas <- as.factor(train$chas)
+train$chas <- NULL
+traintarget <- as.factor(train$target)
+train$target <- traintarget
+testchas <- as.factor(test$chas)
+test$chas <- NULL
+train$rad[train$rad == 24] <- 9
+
+mod4 <- train(target ~ age + dis + tax + medv, 
+            data = train, 
+            method = "glm", family = "binomial",
+            trControl = trainControl(
+                  method = "cv", number = 10,
+                  savePredictions = TRUE),
+            tuneLength = 5, 
+            preProcess = c("center", "scale"))
+```
+
+Now that we have our model, let's make and explain some predictions using LIME. 
+
+```{r}
+set.seed(121)
+explainer <- lime(train, mod4)
+
+obsv1 <- test[c(1),]
+explanation <- explain(obsv1, explainer, n_labels = 1, n_features=11)
+plot_features(explanation, ncol=1)
+```
+
+Here we can see that our model predicts label 0, with a probability of 0.82.   The observations in green are supported by model parameters and increase the probability of being predicted as a given label.   The values in red detract and lower our probability.  
+
+```{r}
+set.seed(121)
+obsv2 <- test[c(2),]
+explanation <- explain(obsv2, explainer, n_labels = 1, n_features=11)
+plot_features(explanation, ncol=1)
+```
+
+Like the first prediction, this case is also expected to be a label of 0, however, it has a much lower probability.   We can see that while the other features push the prediction towards 0, the age variable contradicts the expectations of the model.  
+
+## Conclusion
+
+The LIME package is extremely useful for understanding how a model behaves and what features are driving any given prediction.  For more information, or to understand the underlying methodology, visit: https://github.com/marcotcr/lime
