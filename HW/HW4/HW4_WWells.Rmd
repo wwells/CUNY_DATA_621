@@ -1,0 +1,438 @@
+---
+title: "CUNY DATA 621 - Business Analytics and Data Mining"
+author: "Walt Wells, 2018"
+subtitle: "Homework 4 - Insurance"
+output:
+  pdf_document: default
+  html_document:
+    df_print: paged
+---
+
+```{r, message=F, warning=F, echo=FALSE}
+if (!require('ggplot2')) (install.packages('ggplot2'))
+if (!require('MASS')) (install.packages('MASS'))
+if (!require('dplyr')) (install.packages('dplyr'))
+if (!require('psych')) (install.packages('psych'))
+if (!require('DataExplorer')) (install.packages('DataExplorer'))
+if (!require('mice')) (install.packages('mice'))
+if (!require('caret')) (install.packages('caret'))
+if (!require('faraway')) (install.packages('faraway'))
+if (!require('stargazer')) (install.packages('stargazer'))
+if (!require('pROC')) (install.packages('pROC'))
+
+theme_update(plot.title = element_text(hjust = 0.5), 
+             axis.text.x = element_text(angle = 90, hjust = 1))
+
+train <- read.csv('Data/insurance_training_data.csv', header=T)
+test <- read.csv('Data/insurance-evaluation-data.csv', header=T)
+train$INDEX <- NULL
+test$INDEX <- NULL
+test$TARGET_AMT <- NULL
+test$TARGET_FLAG <- NULL
+train$TARGET_FLAG <- as.factor(train$TARGET_FLAG)
+```
+
+## Problem
+
+Our goal is to explore, analyze and model a dataset represent customer records at an auto insurance company. The objective is to build multiple linear regression and binary logistic regression models on the training data to predict the probability that a person will crash their car and also the amount of money it will cost if the person does crash their car.
+
+## 1. DATA EXPLORATION
+
+First we'll do some basic data cleansing. 
+
+```{r}
+cleanMoney <- function(vector) {
+    i <- gsub(",", "", vector)
+    i <- as.numeric(gsub("[\\$,]", "", i))
+    return(i)
+}
+
+train$INCOME <- cleanMoney(train$INCOME)
+train$HOME_VAL <- cleanMoney(train$HOME_VAL)
+train$BLUEBOOK <- cleanMoney(train$BLUEBOOK)
+train$OLDCLAIM <- cleanMoney(train$OLDCLAIM)
+
+test$INCOME <- cleanMoney(test$INCOME)
+test$HOME_VAL <- cleanMoney(test$HOME_VAL)
+test$BLUEBOOK <- cleanMoney(test$BLUEBOOK)
+test$OLDCLAIM <- cleanMoney(test$OLDCLAIM)
+```
+
+Below we'll display a few basic EDA techniques to gain insight into our insurance dataset.
+
+
+
+### Basic Statistics
+
+The data is 1.8 Mb in size. There are 8,161 rows and 25 columns (features). Of all 25 columns, 14 are discrete, 11 are continuous, and 0 are all missing. There are 970 missing values out of 204,025 data points.
+
+```{r, echo=FALSE, warning=FALSE}
+summary <- describe(train[,c(1:25)])[,c(2:5,8,9,11,12)]
+knitr::kable(summary)
+```
+
+### Compare Target in Training
+
+We make sure there are no issues with an inappropriate distribution of the target variable in our training data.  We also confirm that the cases where the target amount is = 0 is equivalent to the number of target flags that were not claims.
+
+```{r, echo=FALSE, warning=FALSE}
+knitr::kable(table(train$TARGET_FLAG))
+sum(train$TARGET_AMT ==0)
+```
+
+### Histogram of Variables
+
+```{r, echo=FALSE, warning=FALSE}
+out <- split_columns(train)
+plot_histogram(out$continuous)
+plot_bar(out$discrete)
+```
+
+### Relationship of Predictors to Target
+
+```{r, echo=FALSE, warning=FALSE}
+plot_scatterplot(train[2:25,], "TARGET_AMT", position = "jitter")
+```
+
+## 2. DATA PREPARATION
+
+### Variable Adjustments
+
+We'll make a few adjustments here based on some of the plotting we see.  
+
+* Let's make HomeKids a Boolean instead of a factor.  
+* There are some CAR_AGE with - numbers.   Let's make that 0. 
+* There are some blank Jobs.   Let's code those as "Unknown".
+* We'll change Education levels 1 if PhD and Masters.
+
+
+```{r}
+train$HOMEKIDS[train$HOMEKIDS != 0 ] <- 1
+test$HOMEKIDS[test$HOMEKIDS != 0 ] <- 1
+
+train$CAR_AGE[train$CAR_AGE < 0 ] <- 0
+test$CAR_AGE[test$CAR_AGE < 0 ] <- 0
+
+train$JOB <- as.character(train$JOB)
+train$JOB[train$JOB == ""] <- "Unknown"
+train$JOB <- as.factor(train$JOB)
+
+test$JOB <- as.character(test$JOB)
+test$JOB[test$JOB == ""] <- "Unknown"
+test$JOB <- as.factor(test$JOB)
+
+train$EDUCATION <- ifelse(train$EDUCATION %in% c("PhD", "Masters"), 0, 1)
+```
+
+### Plot and Review Missing
+
+```{r}
+plot_missing(train)
+```
+
+We need to make decisions about Age, Income, YOJ, Home_Value, and Car_Age.  After reviewing the test set, we are missing the same variables at about the same rate. 
+
+```{r}
+mice_imputes <- mice(train, m = 2, maxit = 2, print = FALSE)
+densityplot(mice_imputes)
+```
+
+We can see that 4 of the variables with missing values seem to be MAR, as the mice imputation distributions roughly match the existing.   The Age variable does not, which is interesting.   Perhaps people lying about their age?   We'll handle that differently, simply using median imputation for now.
+
+We'll also run the mice imputation again on both the train and test set.   Instead of using it for our models, however, we'll simplify our run and fill in our data.   This is not a good method, as it doesn't account for variability, but it should do fine for the sake of this exercise.  
+
+```{r}
+m <- median(train$AGE, na.rm = T)
+train$AGE[is.na(train$AGE)] <- m
+
+mice_train <-  mice(train, m = 1, maxit = 1, print = FALSE)
+train <- complete(mice_train)
+
+mice_test <- mice(test, m = 1, maxit = 1, print = FALSE)
+test <- complete(mice_test)
+```
+
+## 3. BUILD MODELS
+
+### Problem 1:   Classification
+
+#### Model 1
+
+The first model fits includes all the variables.   A review of the VIF output of the model suggests some points that are highly colinear and a number of variables that may not be necessary.   Model 1 uses the formula:
+
+__target ~ .__
+
+```{r, echo=FALSE, warning=FALSE}
+set.seed(121)
+
+train_logistic <- train
+train_logistic$TARGET_AMT <- NULL
+
+split <- createDataPartition(train_logistic$TARGET_FLAG, p=0.85, list=FALSE)
+partial_train <- train_logistic[split, ]
+validation <- train_logistic[ -split, ]
+
+mod1 <- train(TARGET_FLAG ~., data = partial_train, 
+              method = "glm", family = "binomial",
+              trControl = trainControl(
+                  method = "cv", number = 10,
+                  savePredictions = TRUE),
+              tuneLength = 5, 
+              preProcess = c("center", "scale"))
+
+knitr::kable(vif(mod1$finalModel))
+```
+
+#### Model 2
+
+Our second model ignores the colinear issues, but removes models that seemed unnecessary in Model #1.   Model 2 uses the formula: 
+
+__TARGET_FLAG ~ KIDSDRIV + INCOME + PARENT1 + HOME_VAL + MSTATUS + JOB + TRAVTIME + CAR_USE + BLUEBOOK + TIF + CAR_TYPE + OLDCLAIM + CLM_FREQ + REVOKED + MVR_PTS + URBANICITY__
+
+```{r, echo=FALSE, warning=FALSE}
+# remove low p-values
+mod2 <- train(TARGET_FLAG ~ KIDSDRIV + INCOME + PARENT1 + HOME_VAL +
+                  MSTATUS + JOB + TRAVTIME + CAR_USE + BLUEBOOK + TIF + 
+                  CAR_TYPE + OLDCLAIM + CLM_FREQ + REVOKED + 
+                  MVR_PTS + URBANICITY, 
+            data = partial_train, 
+            method = "glm", family = "binomial",
+            trControl = trainControl(
+                  method = "cv", number = 10,
+                  savePredictions = TRUE),
+            tuneLength = 5, 
+            preProcess = c("center", "scale"))
+knitr::kable(vif(mod2$finalModel))
+```
+
+#### Model #3
+
+Model #3 removes the variables with the 3 highest VIF values from model1, EDUCATION and SEX.   The model formula is:
+
+__TARGET_FLAG ~ KIDSDRIV + AGE + HOMEKIDS + YOJ + INCOME + PARENT1 + HOME_VAL + MSTATUS + JOB + TRAVTIME + CAR_USE + BLUEBOOK + TIF + CAR_TYPE + RED_CAR + OLDCLAIM + CLM_FREQ + REVOKED + MVR_PTS + CAR_AGE + URBANICITY__
+
+```{r, echo=FALSE, warning=FALSE}
+## Reduce Collinearity by removing high VIFs
+mod3 <- train(TARGET_FLAG ~ KIDSDRIV + AGE + HOMEKIDS + YOJ + 
+                  PARENT1 + HOME_VAL + MSTATUS + JOB + 
+                  TRAVTIME + CAR_USE + BLUEBOOK + TIF + CAR_TYPE + 
+                  RED_CAR + OLDCLAIM + CLM_FREQ + REVOKED + MVR_PTS + 
+                  CAR_AGE + URBANICITY, 
+              data = partial_train, 
+              method = "glm", family = "binomial",
+              trControl = trainControl(
+                  method = "cv", number = 10,
+                  savePredictions = TRUE),
+              tuneLength = 5, 
+              preProcess = c("center", "scale"))
+knitr::kable(vif(mod3$finalModel))
+```
+
+#### Model #4
+
+Model #4 takes the advances in model #3 and removes those values shown to be poor predictors.   
+
+__TARGET_FLAG ~ KIDSDRIV + PARENT1 + HOME_VAL + MSTATUS + JOB + TRAVTIME + CAR_USE + BLUEBOOK + TIF + CAR_TYPE + OLDCLAIM + CLM_FREQ + REVOKED + MVR_PTS + CAR_AGE + URBANICITY__
+
+```{r, echo=FALSE, warning=FALSE}
+## reduce collinearity, and remove low values
+mod4 <- train(TARGET_FLAG ~ KIDSDRIV + 
+                  PARENT1 + HOME_VAL + MSTATUS + JOB + 
+                  TRAVTIME + CAR_USE + BLUEBOOK + TIF + CAR_TYPE + 
+                  OLDCLAIM + CLM_FREQ + REVOKED + MVR_PTS + 
+                  CAR_AGE + URBANICITY, 
+            data = partial_train, 
+            method = "glm", family = "binomial",
+            trControl = trainControl(
+                  method = "cv", number = 10,
+                  savePredictions = TRUE),
+            tuneLength = 5, 
+            preProcess = c("center", "scale"))
+knitr::kable(vif(mod4$finalModel))
+```
+
+### Problem 2:  Regression
+
+#### Model #1
+
+The first model fits includes all the variables.   
+
+__target ~ .__
+
+```{r}
+set.seed(121)
+
+train_regression <- train
+train_regression <- train_regression[train_regression$TARGET_FLAG == 1, ]
+train_regression$TARGET_FLAG <- NULL
+
+mod1lm <- train(TARGET_AMT ~., data = train_regression, 
+              method = "lm", 
+              trControl = trainControl(
+                  method = "cv", number = 10,
+                  savePredictions = TRUE),
+              tuneLength = 5, 
+              preProcess = c("center", "scale"))
+```
+
+#### Model #2
+
+Model #2 we take start trimming out features with less impact.
+
+__TARGET_AMT ~ HOME_VAL +  CAR_USE + BLUEBOOK + TIF + CAR_TYPE + OLDCLAIM + CLM_FREQ + REVOKED + MVR_PTS + CAR_AGE + URBANICITY__
+
+```{r}
+mod2lm <- train(TARGET_AMT ~ HOME_VAL +  
+                  CAR_USE + BLUEBOOK + TIF + CAR_TYPE + 
+                  OLDCLAIM + CLM_FREQ + REVOKED + MVR_PTS + 
+                  CAR_AGE + URBANICITY, data = train_regression, 
+              method = "lm", 
+              trControl = trainControl(
+                  method = "cv", number = 10,
+                  savePredictions = TRUE),
+              tuneLength = 5, 
+              preProcess = c("center", "scale"))
+```
+
+#### Model 3
+
+Model #3 is pretty bare-bones and only reflects generally issues related to the car value or driver's legal issues.
+
+__TARGET_AMT ~ BLUEBOOK + REVOKED + MVR_PTS + CAR_AGE__
+
+```{r}
+mod3lm <- train(TARGET_AMT ~ BLUEBOOK + REVOKED + MVR_PTS + 
+                  CAR_AGE, data = train_regression, 
+              method = "lm", 
+              trControl = trainControl(
+                  method = "cv", number = 10,
+                  savePredictions = TRUE),
+              tuneLength = 5, 
+              preProcess = c("center", "scale"))
+```
+
+## 4. SELECT MODELS
+
+To help aid in model selection for the classification problem, we'll review their accuracy by making predictions on our holdout validation set, and comparing their performance using a variety of confusion matrix adjacent functions like fourfold plots, summary statistics, and ROC / AUC plots. 
+
+To aid in model selection for the regression problem, we'll compare the error in the fit of our models in a table and select from there. 
+
+### 1:  Classification
+
+### Fourfold Plots
+
+```{r, echo=FALSE, warning=FALSE}
+preds1 <- predict(mod1, newdata = validation)
+preds2 <- predict(mod2, newdata = validation)
+preds3 <- predict(mod3, newdata = validation)
+preds4 <- predict(mod4, newdata = validation)
+m1cM <- confusionMatrix(preds1, validation$TARGET_FLAG, 
+                        mode = "everything")
+m2cM <- confusionMatrix(preds2, validation$TARGET_FLAG, 
+                        mode = "everything")
+m3cM <- confusionMatrix(preds3, validation$TARGET_FLAG, 
+                        mode = "everything")
+m4cM <- confusionMatrix(preds4, validation$TARGET_FLAG, 
+                        mode = "everything")
+par(mfrow=c(2,2))
+fourfoldplot(m1cM$table, color = c("#B22222", "#2E8B57"), main="Mod1")
+fourfoldplot(m2cM$table, color = c("#B22222", "#2E8B57"), main="Mod2")
+fourfoldplot(m3cM$table, color = c("#B22222", "#2E8B57"), main="Mod3")
+fourfoldplot(m4cM$table, color = c("#B22222", "#2E8B57"), main="Mod4")
+```
+
+### Summary Statistics
+
+```{r, echo=FALSE, warning=FALSE}
+eval <- data.frame(m1cM$byClass, 
+                   m2cM$byClass, 
+                   m3cM$byClass, 
+                   m4cM$byClass)
+
+eval <- data.frame(t(eval))
+
+# manipulate results DF
+eval <- dplyr::select(eval, Sensitivity, Specificity, Precision, Recall, F1)
+row.names(eval) <- c("Model1", "Model2", "Model3", "Model4")
+knitr::kable(eval)
+```
+
+### ROC / AUC
+
+```{r, echo=FALSE, warning=FALSE}
+getROC <- function(model) {
+    name <- deparse(substitute(model))
+    pred.prob1 <- predict(model, newdata = train, type="prob")
+    p1 <- data.frame(pred = train$TARGET_FLAG, prob = pred.prob1[[1]])
+    p1 <- p1[order(p1$prob),]
+    rocobj <- roc(p1$pred, p1$prob)
+    plot(rocobj, asp=NA, legacy.axes = TRUE, print.auc=TRUE,
+         xlab="Specificity", main = name)
+}
+
+par(mfrow=c(2,2))
+getROC(mod1)
+getROC(mod2)
+getROC(mod3)
+getROC(mod4)
+```
+
+### Model Selection - Classification
+
+While the first 2 models may have the most information, they also suffer from so co-linearity issues as shown by the variance VIF output.   Model #3 performs well, but has some additional variables that may be poor predictors of whether a neighborhood will be above or below the median crime rate.   Instead, while stripped out, we'll use Model #4.   
+
+Before we make predictions, let's run this final model over our full dataset, and review some summary diagnostic plots and output.  
+
+```{r, echo=FALSE, warning=FALSE}
+finalmod <- train(TARGET_FLAG ~ KIDSDRIV + 
+                  PARENT1 + HOME_VAL + MSTATUS + JOB + 
+                  TRAVTIME + CAR_USE + BLUEBOOK + TIF + CAR_TYPE + 
+                  OLDCLAIM + CLM_FREQ + REVOKED + MVR_PTS + 
+                  CAR_AGE + URBANICITY, 
+            data = train, 
+            method = "glm", family = "binomial",
+            trControl = trainControl(
+                  method = "cv", number = 10,
+                  savePredictions = TRUE),
+            tuneLength = 5, 
+            preProcess = c("center", "scale"))
+
+summary(finalmod)
+plot(finalmod$finalModel)
+```
+
+### 2:  Regression
+
+Here we see a preference again for the simpler model.   We'll make our predictions using Model 3. 
+
+```{r}
+df <- data.frame()
+df <- rbind(df, mod1lm$results)
+df <- rbind(df, mod2lm$results)
+df <- rbind(df, mod3lm$results)
+df$intercept <- c("Mod1", "Mod2", "Mod3")
+colnames(df)[1] <- "model"
+knitr::kable(df)
+```
+
+## Make Predictions
+
+We make our final predictions, create a dataframe with the prediction and the predicted probabilities for our classification problem.   
+
+However, in case our predictive model got the classification portion wrong, we'll make a prediction on the target amount for all observations in the test set, regardless of whether we think they'll make a claim.  
+
+```{r, warning=FALSE, message=FALSE}
+finalpreds <- predict(finalmod, test)
+finalpreds.probs <- predict(finalmod, test, type="prob")
+finaldf <- cbind(finalpreds.probs, TARGET_FLAG=finalpreds)
+
+finalAmountPreds <- predict(mod3lm, test)
+finaldf <- cbind(finaldf, TARGET_AMT = finalAmountPreds)
+
+write.csv(finaldf, 'HW4preds.csv', row.names = FALSE)
+```
+
+# Appendix
+
+* For full output code visit: https://github.com/wwells/CUNY_DATA_621/blob/master/HW/HW4/HW4_WWells.Rmd
+* For predicted values over test set visit:  https://github.com/wwells/CUNY_DATA_621/blob/master/HW/HW4/HW4preds.csv
