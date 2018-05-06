@@ -1,0 +1,108 @@
+---
+title: "CUNY DATA 621 - Business Analytics and Data Mining"
+subtitle: "Week 11 - Recommended"
+author: "Walt Wells, 2018"
+output:
+  html_document:
+    css: ../custom.css
+    highlight: zenburn
+    theme: lumen
+---
+
+# Environment Prep
+
+```{r, message=F, warning=F}
+if (!require("faraway")) install.packages("faraway")
+if (!require("ggplot2")) install.packages("ggplot2")
+if (!require("dplyr")) install.packages("dplyr")
+if (!require("DataExplorer")) install.packages("DataExplorer")
+if (!require("nlme")) install.packages("nlme")
+```
+
+# MARR 9.1
+
+```{r}
+boxoffice <- read.table('http://www.stat.tamu.edu/~sheather/book/docs/datasets/boxoffice.txt', header=T)
+
+attach(boxoffice)
+
+YearsS1975 <- year - 1975
+lsm1 <- lm(GrossBoxOffice~YearsS1975,data=boxoffice)
+StanRes1 <- rstandard(lsm1)
+```
+
+```{r}
+par(mfrow=c(2,2))
+plot(YearsS1975,GrossBoxOffice,ylab="Gross Box Office ($M)",xlab="Years since 1975")
+abline(lsm1,lty=2)
+plot(YearsS1975,StanRes1,ylab="Standardized Residuals",xlab="Years since 1975")
+acf(StanRes1,main="Series Standardized Residuals")
+```
+
+
+```{r}
+m1tls <- gls(GrossBoxOffice~YearsS1975,
+          correlation=corAR1(form=~YearsS1975),
+          data=boxoffice,
+          method="ML")
+summary(m1tls)
+acf(m1tls$residuals)
+
+m2tls <- gls(GrossBoxOffice~YearsS1975,
+          correlation=corARMA(q=1),
+          data=boxoffice,
+          method="ML")
+summary(m2tls)
+acf(m2tls$residuals)
+
+m3tls <- gls(GrossBoxOffice~YearsS1975,
+          correlation=corARMA(q=2),
+          data=boxoffice,
+          method="ML")
+summary(m3tls)
+acf(m3tls$residuals)
+```
+
+```{r}
+predict(m3tls, data.frame(YearsS1975 = 33))
+detach(boxoffice)
+```
+
+# MARR 9.2
+
+```{r}
+bookstore <- read.table('http://www.stat.tamu.edu/~sheather/book/docs/datasets/bookstore.txt', header=T)
+
+attach(bookstore)
+mod1 <- lm(Sales ~ ., data=bookstore)
+summary(mod1)
+plot(mod1)
+acf(mod1$residuals)
+```
+
+```{r}
+m1tls <- gls(Sales ~ Lag1Advert + Time, 
+          correlation=corARMA(q=2),
+          data=bookstore,
+          method="ML")
+summary(m1tls)
+acf(m1tls$residuals)
+detach(bookstore)
+```
+
+# LMR 8.2
+
+```{r}
+attach(divusa)
+
+mod1 <- lm(divorce ~ unemployed + femlab + marriage + birth + military, data = divusa)
+
+acf(mod1$residuals)
+
+mod2 <- gls(divorce ~ unemployed + femlab + marriage + birth + military,
+          correlation=corAR1(form=~year),
+          data=bookstore,
+          method="ML")
+summary(mod2)
+acf(mod2$residuals)
+```

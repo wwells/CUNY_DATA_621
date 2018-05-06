@@ -1,0 +1,270 @@
+---
+title: "CUNY DATA 621 - Business Analytics and Data Mining"
+author: "Walt Wells, 2018"
+subtitle: "Homework 5 - Wine"
+output:
+  pdf_document: default
+  html_document:
+    df_print: paged
+---
+
+```{r, message=F, warning=F, echo=FALSE}
+if (!require('ggplot2')) (install.packages('ggplot2'))
+if (!require('MASS')) (install.packages('MASS'))
+if (!require('dplyr')) (install.packages('dplyr'))
+if (!require('psych')) (install.packages('psych'))
+if (!require('DataExplorer')) (install.packages('DataExplorer'))
+if (!require('mice')) (install.packages('mice'))
+if (!require('pscl')) (install.packages('pscl'))
+
+theme_update(plot.title = element_text(hjust = 0.5), 
+             axis.text.x = element_text(angle = 90, hjust = 1))
+
+train <- read.csv('Data/wine-training-data.csv', header=T)
+test <- read.csv('Data/wine-evaluation-data.csv', header=T)
+train$INDEX <- NULL
+test$IN <- NULL
+test$TARGET <- NULL
+```
+
+## Problem
+
+Our goal is to explore, analyze and model a dataset containing information on approximately 12,000 commercially available wines. The variables are mostly related to the chemical properties of the wine being sold. The response variable is the number of sample cases of wine that were purchased by wine distribution companies after sampling a wine.  These cases would be used to provide tasting samples to restaurants and wine stores around the United States. The more sample cases purchased, the more likely is a wine to be sold at a high end restaurant.
+
+A large wine manufacturer is studying the data in order to predict  the number of wine cases ordered based upon the wine characteristics. If the wine manufacturer can predict the number of cases, then that manufacturer will be able to adjust their wine offering to maximize sales.
+
+Your objective is to build a count regression model to predict the number of cases of wine that will be sold given certain properties of the wine.
+
+## 1. DATA EXPLORATION
+
+Below we'll display a few basic EDA techniques to gain insight into our wine dataset.
+
+### Basic Statistics
+
+The data is 1.3 Mb in size. There are 12,795 rows and 15 columns (features). Of all 15 columns, 0 are discrete, 15 are continuous, and 0 are all missing. There are 8,200 missing values out of 191,925 data points.
+
+```{r, echo=FALSE, warning=FALSE, eval=FALSE}
+summary <- describe(train[,c(1:15)])[,c(2:5,8,9,11,12)]
+knitr::kable(summary)
+```
+
+### Histogram of Variables
+
+```{r, echo=FALSE, warning=FALSE}
+plot_histogram(train)
+```
+
+### Relationship of Predictors to Target
+
+```{r, echo=FALSE, warning=FALSE}
+plot_scatterplot(train[2:15,], "TARGET", position = "jitter")
+```
+
+## 2. DATA PREPARATION
+
+### Negative Values
+
+As discussed during a class, there are some wine quality measures that are negative that should not be.   We will simply take the absolute value of these for now.   The alternative would be to center by adding the min of each variable.   Since we are given little information about the source of this dataset, and why these quality measures are so off, it is difficult to ascertain the best overall approach.   Lacking that, we take the absolute value. 
+
+```{r}
+train$FixedAcidity <- abs(train$FixedAcidity)
+test$FixedAcidity <- abs(test$FixedAcidity)
+
+train$VolatileAcidity <- abs(train$VolatileAcidity)
+test$VolatileAcidity <- abs(test$VolatileAcidity)
+
+train$CitricAcid <- abs(train$CitricAcid)
+test$CitricAcid <- abs(test$CitricAcid)
+
+train$ResidualSugar <- abs(train$ResidualSugar)
+test$ResidualSugar <- abs(test$ResidualSugar)
+
+train$Chlorides <- abs(train$Chlorides)
+test$Chlorides <- abs(test$Chlorides)
+
+train$FreeSulfurDioxide <- abs(train$FreeSulfurDioxide)
+test$FreeSulfurDioxide <- abs(test$FreeSulfurDioxide)
+
+train$TotalSulfurDioxide <- abs(train$TotalSulfurDioxide)
+test$TotalSulfurDioxide <- abs(test$TotalSulfurDioxide)
+
+train$Sulphates <- abs(train$Sulphates)
+test$Sulphates <- abs(test$Sulphates)
+```
+
+For LabelAppeal, we will add the min. 
+
+```{r}
+train$LabelAppeal <- train$LabelAppeal + abs(min(train$LabelAppeal))
+test$LabelAppeal <- test$LabelAppeal + abs(min(test$LabelAppeal))
+```
+
+### Plot and Review Missing
+
+```{r}
+plot_missing(train)
+```
+
+We need to make decisions about pH, ResidualSugar, Chlorides, Free SulfurDioxide, Alcohol, TotalSulfurDioxide, Sulphates, and STARS.  After reviewing the test set, we are missing the same variables at about the same rate. 
+
+Of particular interest is our STARS.   It's entirely likely, with 26% missing that this is a function of critics not getting around to reviewing, or it potentially being subpar.   To manage this (and because it appears that STARS rating is indeed predictive of selling and missing values are not random) we will simply assign NAs a 0.  
+
+```{r}
+train$STARS[is.na(train$STARS)] <- 0
+test$STARS[is.na(test$STARS)] <- 0
+```
+
+Elsewhere, let's look at using MICE for imputation.  
+
+```{r}
+mice_imputes <- mice(train, m = 2, maxit = 2, print = FALSE)
+densityplot(mice_imputes)
+```
+
+We can see that each of the remaining variables with missing values seem to be MAR, as the mice imputation distributions roughly match the existing.   
+
+We'll also run the mice imputation again on both the train and test set.   Instead of using it for our models, however, we'll simplify our run and fill in our data.   This is not a good method, as it doesn't account for variability, but it should do fine for the sake of this exercise.  
+
+```{r}
+mice_train <-  mice(train, m = 1, maxit = 1, print = FALSE)
+train <- complete(mice_train)
+
+mice_test <- mice(test, m = 1, maxit = 1, print = FALSE)
+test <- complete(mice_test)
+```
+
+### Correlation Review
+
+```{r}
+plot_correlation(train)
+```
+
+And finally, after our analysis, (and so we can use it in in our model), we'll update STARS to become a factor variable. 
+
+```{r}
+train$STARS <- as.factor(train$STARS)
+test$STARS <- as.factor(test$STARS)
+```
+
+## 3. BUILD MODELS
+
+#### Create Holdout
+
+```{r}
+set.seed(121)
+split <- sample(1:nrow(train), .8*nrow(train))
+  
+holdout <- train[-split,]
+train <- train[split,]
+```
+
+#### Model 1:   Poisson
+
+```{r}
+p1 <- glm(TARGET ~ . , data=train, family="poisson")
+#summary(p1)
+```
+
+#### Model 2:   Poisson Reduced
+
+```{r}
+p2 <- glm(TARGET ~ VolatileAcidity + Chlorides + TotalSulfurDioxide + Sulphates + Alcohol + LabelAppeal + AcidIndex + STARS, data=train, family="poisson")
+#summary(p2)
+```
+
+#### Model 3:   Negative Binomial
+
+```{r}
+nb1 <- glm.nb(TARGET ~ . , data=train)
+#summary(nb1)
+```
+
+#### Model 4:  Negative Binomial Reduced
+
+```{r}
+nb2 <- glm.nb(TARGET ~ VolatileAcidity + Chlorides + TotalSulfurDioxide + Sulphates + Alcohol + LabelAppeal + AcidIndex + STARS, data=train)
+#summary(nb2)
+```
+
+#### Model 5:   Zero Dispersion Counts
+
+We see that there are an inflated number of 0s in our counts target, so let's try this model across the negative binomial Distribution. 
+
+```{r, warning=F}
+zMod1 <- zeroinfl(TARGET ~ . |STARS, data=train, dist="negbin")
+#summary(zMod1)
+```
+
+#### Model 6:   Zero Dispersion Counts:  Reduced
+
+```{r, warning=F}
+zMod2 <- zeroinfl(TARGET ~ VolatileAcidity + Chlorides + Density + Alcohol + LabelAppeal + AcidIndex | STARS, data=train, dist="negbin")
+#summary(zMod2)
+```
+
+## 4. SELECT MODELS
+
+To aid in model selection, let's test each of our models agains the holdout validation set. 
+
+```{r}
+getMAE <- function(x) {
+    mean(abs(holdout$TARGET - x))
+}
+
+getRMSE <- function(x) {
+    sqrt(mean((holdout$TARGET - x)^2))
+}
+
+
+results <- data.frame(Model = c("Poisson1",
+                                "Poisson2",
+                                "NegBinom1",
+                                "NegBinom2",
+                                "ZeroCounts1",
+                                "ZeroCounts2"), 
+                     MAE = c(getMAE(predict.lm(p1, holdout)),
+                             getMAE(predict.lm(p2, holdout)),
+                             getMAE(predict.lm(nb1, holdout)),
+                             getMAE(predict.lm(nb2, holdout)),
+                             getMAE(predict(zMod1, holdout,
+                                            type="response")),
+                             getMAE(predict(zMod2, holdout,
+                                            type="response"))
+                             ),
+                     RMSE = c(getRMSE(predict.lm(p1, holdout)),
+                              getRMSE(predict.lm(p2, holdout)),
+                              getRMSE(predict.lm(nb1, holdout)),
+                              getRMSE(predict.lm(nb2, holdout)),
+                              getRMSE(predict(zMod1, holdout,
+                                            type="response")),
+                              getRMSE(predict(zMod2, holdout,
+                                            type="response"))
+                              )
+)
+
+knitr::kable(results)
+```
+
+Here we see a preference for our full zero-counts Model.   We'll make our predictions using our the entire model. 
+
+```{r}
+summary(zMod1)
+```
+
+## Make Predictions
+
+We make our final predictions, create a dataframe with the prediction.   We see that our predictions have a similar shape to our training Target variable.  
+
+```{r}
+finalpreds <- predict(zMod1, test)
+finaldf <- cbind(TARGET_FLAG=finalpreds)
+
+hist(finalpreds)
+
+write.csv(finaldf, 'HW5preds.csv', row.names = FALSE)
+```
+
+# Appendix
+
+* For full output code visit: https://github.com/wwells/CUNY_DATA_621/blob/master/HW/HW5/HW5_WWells.Rmd
+* For predicted values over test set visit:  https://github.com/wwells/CUNY_DATA_621/blob/master/HW/HW5/HW5preds.csv

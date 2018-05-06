@@ -83,7 +83,7 @@ sum(train$TARGET_AMT ==0)
 ### Histogram of Variables
 
 ```{r, echo=FALSE, warning=FALSE}
-out <- split_columns(train)
+out <- split_columns(df)
 plot_histogram(out$continuous)
 plot_bar(out$discrete)
 ```

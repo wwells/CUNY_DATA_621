@@ -1,6 +1,6 @@
 ---
 title: "CUNY DATA 621 - Business Analytics and Data Mining"
-subtitle: "Week 9 - Recommended"
+subtitle: "Week 10 - Recommended"
 author: "Walt Wells, 2018"
 output:
   html_document:
